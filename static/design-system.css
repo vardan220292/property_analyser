@@ -815,3 +815,146 @@ td, th { padding: 0.6rem 0.7rem; }
   #section-area #comp-form,
   #section-area #rental-form { padding: .75rem; }
 }
+
+/* Milestone 6 — scenario management and grouped navigation */
+.navbar nav { gap: .35rem; overflow: visible; }
+.navbar nav > a.nav-primary,
+.navbar nav > .nav-group > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.45rem;
+  padding: .55rem .78rem;
+  border-radius: .7rem;
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 680;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+}
+.navbar nav > .nav-group > summary::-webkit-details-marker { display:none; }
+.navbar nav > .nav-group > summary::after { content: "⌄"; margin-left: .45rem; opacity: .65; }
+.navbar nav > .nav-group[open] > summary,
+.navbar nav > .nav-group > summary:hover,
+.navbar nav > a.nav-primary:hover { background: var(--hover); color: var(--txt); }
+.navbar nav > .nav-group { position: relative; flex: none; }
+.navbar nav .nav-menu {
+  position: absolute;
+  top: calc(100% + .55rem);
+  left: 0;
+  z-index: 40;
+  display: grid;
+  min-width: 13.5rem;
+  padding: .45rem;
+  border: 1px solid var(--bd);
+  border-radius: .9rem;
+  background: var(--card);
+  box-shadow: 0 16px 40px rgba(15,30,55,.16);
+}
+.navbar nav .nav-menu a {
+  display: block;
+  padding: .65rem .75rem;
+  border-radius: .55rem;
+  color: var(--muted);
+  font-size: .78rem;
+}
+.navbar nav .nav-menu a:hover,
+.navbar nav .nav-menu a.active { background: var(--pri-soft); color: var(--pri); }
+.navbar nav .nav-group:has(a.active) > summary { color: var(--pri); background: var(--pri-soft); }
+#section-scenarios > .section {
+  border: 1px solid var(--dash-line);
+  border-radius: 1.05rem;
+  padding: 1.4rem 1.5rem;
+  box-shadow: 0 5px 20px rgba(20,38,67,.035);
+}
+#section-scenarios > .section > h2 { font-size: 1rem; letter-spacing: -.035em; }
+#section-scenarios .chart-row > .section {
+  min-width: 0; border: 1px solid var(--dash-line); border-radius: .95rem;
+  box-shadow: none; padding: 1.15rem;
+}
+#section-scenarios .table-wrap { margin-top: .85rem; border-radius: .85rem; }
+
+/* Milestone 7 — buyer-agent workspace and client-facing portal */
+#section-workspace > .section {
+  border: 1px solid var(--dash-line); border-radius: 1.05rem;
+  padding: 1.4rem 1.5rem; box-shadow: 0 5px 20px rgba(20,38,67,.035);
+}
+#section-workspace > .section > h2 { font-size: 1rem; letter-spacing: -.035em; }
+#section-workspace .grid-form {
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,14rem),1fr));
+  gap: 1rem;
+}
+#section-workspace .field label { color: var(--txt); font-weight: 650; }
+#section-workspace .field input:not([type=file]),
+#section-workspace .field select { min-height: 2.65rem; border-radius: .7rem; background: var(--bg); }
+#section-workspace .portal-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .65rem;
+  margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--bd);
+}
+body.portal {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 360px at 85% -10%, rgba(59,130,246,.08), transparent 65%),
+    var(--bg);
+  color: var(--txt);
+  font-family: var(--font-sans);
+}
+.portal .portal-head {
+  position: sticky; top: 0; z-index: 20;
+  padding: .9rem clamp(1rem,4vw,3rem);
+  background: color-mix(in srgb,var(--card) 92%,transparent);
+  border-bottom: 1px solid var(--bd);
+  backdrop-filter: blur(16px);
+}
+.portal .portal-logo { border-radius: .7rem; background: #285a9f; }
+.portal .portal-main { max-width: 76rem; padding: 2rem clamp(1rem,3vw,2.5rem) 4rem; }
+.portal .portal-title-row { margin-bottom: 1rem; }
+.portal .portal-title-row h1 { font-size: clamp(1.6rem,3vw,2.25rem); letter-spacing: -.05em; }
+.portal .section {
+  margin: 1rem 0; padding: clamp(1rem,2.5vw,1.6rem);
+  border: 1px solid var(--bd); border-radius: 1.1rem;
+  background: var(--card); box-shadow: var(--shadow);
+}
+.portal .section h2 { font-size: 1.05rem; letter-spacing: -.035em; }
+.portal #p-cards { grid-template-columns: repeat(auto-fit,minmax(13rem,1fr)); gap: .8rem; }
+.portal #p-property-map { min-height: 19rem; border-radius: .85rem; overflow: hidden; }
+.portal .slider-field { padding: .85rem; border: 1px solid var(--bd); border-radius: .8rem; background: var(--bg); }
+.portal .portal-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.65rem; margin-top:1rem; }
+.portal .source-note { line-height:1.55; }
+
+/* Milestone 8 — responsive/accessibility polish */
+:where(button,a,summary,input,select,textarea) { -webkit-tap-highlight-color: transparent; }
+button:disabled { opacity: .48; cursor: not-allowed; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+@media (max-width: 900px) {
+  .navbar { flex-wrap: wrap; gap: .5rem; }
+  .navbar nav { order: 3; flex-basis: 100%; overflow-x: auto; padding-bottom: .15rem; }
+  .navbar-right { margin-left: auto; }
+  .subbar { top: 6.8rem; }
+}
+@media (max-width: 620px) {
+  .navbar { padding: .6rem .85rem; }
+  .navbar nav { gap: .2rem; }
+  .navbar nav > a.nav-primary,
+  .navbar nav > .nav-group > summary { min-height: 2.25rem; padding: .48rem .58rem; font-size: .72rem; }
+  .navbar nav .nav-menu { position: fixed; left: .75rem; right: .75rem; top: auto; min-width: 0; }
+  .subbar { position: relative; top: auto; padding: .65rem .85rem; }
+  .subbar .topbar-actions { width: 100%; }
+  .subbar .topbar-actions > * { flex: 1 1 auto; min-width: 0; }
+  .main { padding: 1rem .85rem 3rem; }
+  #section-scenarios > .section,
+  #section-workspace > .section { padding: 1rem; }
+  .portal .portal-main { padding-top: 1rem; }
+  .portal .portal-head { position: relative; }
+}
+:root[data-theme="dark"] #section-scenarios > .section,
+:root[data-theme="dark"] #section-workspace > .section {
+  border-color: var(--bd); box-shadow: 0 6px 22px rgba(0,0,0,.16);
+}
