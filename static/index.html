@@ -31,18 +31,33 @@
         <span class="brand-text">Property<b>Analyser</b></span>
       </a>
 
-      <nav id="nav">
-        <a data-target="overview" class="active">Dashboard</a>
-        <a data-target="inputs">Inputs</a>
-        <a data-target="property">Property</a>
-        <a data-target="area">Area</a>
-        <a data-target="cashflow">Cash Flow</a>
-        <a data-target="projections">Projections</a>
-        <a data-target="exit">Exit</a>
-        <a data-target="borrowing">Borrowing</a>
-        <a data-target="actuals">Actuals</a>
-        <a data-target="scenarios">Scenarios</a>
-        <a data-target="workspace" id="nav-workspace" class="hidden">Workspace</a>
+      <nav id="nav" aria-label="Main navigation">
+        <a data-target="overview" class="active nav-primary">Dashboard</a>
+        <details class="nav-group">
+          <summary>Analyse</summary>
+          <div class="nav-menu">
+            <a data-target="inputs">Investment inputs</a>
+            <a data-target="cashflow">Cash flow</a>
+            <a data-target="projections">Projections</a>
+            <a data-target="exit">Exit &amp; CGT</a>
+            <a data-target="borrowing">Borrowing capacity</a>
+            <a data-target="actuals">Actuals</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>Research</summary>
+          <div class="nav-menu">
+            <a data-target="property">Property intelligence</a>
+            <a data-target="area">Area &amp; suburb</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>Manage</summary>
+          <div class="nav-menu">
+            <a data-target="scenarios">Scenarios &amp; reports</a>
+            <a data-target="workspace" id="nav-workspace" class="hidden">Client workspace</a>
+          </div>
+        </details>
       </nav>
 
       <div class="navbar-right">
