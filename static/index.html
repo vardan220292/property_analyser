@@ -99,98 +99,71 @@
       <div id="warnings" class="warnings hidden"></div>
 
       <!-- ==================== DASHBOARD ==================== -->
-      <section id="section-overview" class="section-page active">
-        <div class="dash-head">
+      <section id="section-overview" class="section-page active dashboard-v2">
+        <div class="dash-head dashboard-v2-head">
           <div class="dash-heading-copy">
-            <div class="dash-eyebrow">PORTFOLIO OVERVIEW</div>
-            <h1 class="dash-title">Your property dashboard</h1>
-            <div class="dash-sub">Welcome back, <span id="dash-user">there</span>. Track your research, compare opportunities and understand your portfolio.</div>
+            <div class="dash-eyebrow">PROPERTY WEALTH WORKSPACE</div>
+            <h1 class="dash-title">Your portfolio, at a glance.</h1>
+            <div class="dash-sub">A clear view of your current investment scenario, cash flow and long-term position.</div>
           </div>
           <div class="dash-actions">
-            <button id="dash-refresh" class="icon-btn lg" title="Refresh dashboard" aria-label="Refresh dashboard">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-            </button>
+            <span class="snapshot-context" id="portfolio-snapshot-context">Current scenario</span>
+            <button id="dash-refresh" class="secondary" title="Refresh dashboard">↻ Refresh</button>
             <button id="dash-scenarios" class="secondary">Compare scenarios</button>
             <button id="dash-add" class="primary">+ Add property</button>
           </div>
         </div>
 
-        <div class="stat-grid" id="dash-stats"></div>
+        <div class="dashboard-context-strip">
+          <span class="dashboard-live-dot"></span>
+          <span>Scenario view</span>
+          <span class="dashboard-context-separator">·</span>
+          <span>Figures are projections based on your current inputs, not confirmed owned-asset balances.</span>
+        </div>
 
-        <div class="portfolio-snapshot section">
-          <div class="section-head-row"><div><div class="dash-eyebrow">PORTFOLIO HEALTH</div><h2>At a glance</h2><div class="hint">Live figures from the currently loaded scenario and its projection.</div></div><span class="snapshot-context" id="portfolio-snapshot-context">Current scenario</span></div>
+        <div class="portfolio-snapshot dashboard-v2-kpis">
+          <div class="section-head-row"><div><div class="dash-eyebrow">FINANCIAL SNAPSHOT</div><h2>Investment position</h2><div class="hint">Key numbers for the scenario currently loaded in the analyser.</div></div></div>
           <div class="portfolio-kpi-grid" id="portfolio-kpis"></div>
-          <div class="portfolio-insight-grid">
-            <div class="portfolio-insight"><div class="insight-heading"><h3>Property performance</h3><span class="hint">Year-one after-tax cash flow</span></div><div id="portfolio-performance" class="portfolio-performance"></div></div>
-            <div class="portfolio-insight"><div class="insight-heading"><h3>Scenario checks</h3><span class="hint">Calculation warnings to review</span></div><div id="portfolio-alerts" class="portfolio-alerts"></div></div>
+        </div>
+
+        <div class="dashboard-v2-grid">
+          <div class="section dashboard-primary-panel">
+            <div class="section-head-row"><div><div class="dash-eyebrow">LONG-TERM OUTLOOK</div><h2>Property value, debt &amp; equity</h2><div class="hint">Projected portfolio position over your selected hold period.</div></div></div>
+            <div class="chart-box dashboard-main-chart"><canvas id="chart-ov-equity"></canvas></div>
+          </div>
+          <div class="section dashboard-side-panel">
+            <div class="section-head-row"><div><div class="dash-eyebrow">PROPERTY BREAKDOWN</div><h2>Performance by property</h2><div class="hint">Year-one after-tax cash flow and gross yield.</div></div></div>
+            <div id="portfolio-performance" class="portfolio-performance"></div>
+            <div class="dashboard-warning-block"><div class="insight-heading"><h3>Things to review</h3><span class="hint">Model checks</span></div><div id="portfolio-alerts" class="portfolio-alerts"></div></div>
           </div>
         </div>
 
-        <div class="dash-row">
-          <div class="section dashboard-panel">
-            <h2>Recent activity</h2>
-            <div class="hint">Your latest saves and updates.</div>
+        <div class="dashboard-lower-grid">
+          <div class="section dashboard-table-panel">
+            <div class="section-head-row"><div><div class="dash-eyebrow">INVESTMENT DETAIL</div><h2>Property breakdown</h2><div class="hint">Purchase price, rent, loan exposure and projected returns.</div></div></div>
+            <div class="table-wrap"><table id="overview-props"></table></div>
+          </div>
+          <div class="section dashboard-research-panel">
+            <div class="section-head-row"><div><div class="dash-eyebrow">RESEARCH LIBRARY</div><h2>Recently analysed</h2><div class="hint">Saved property opportunities.</div></div><button id="dash-add-inline" class="secondary">+ Add</button></div>
             <div id="dash-activity" class="activity-list"></div>
-          </div>
-          <div class="section dashboard-panel dashboard-score-panel">
-            <h2>Score distribution</h2>
-            <div class="hint">Investment score across your saved properties, from 0 to 100.</div>
-            <div class="chart-box half-height"><canvas id="chart-dash-scores"></canvas></div>
+            <div id="dash-props" class="dashboard-research-list"></div>
           </div>
         </div>
 
-        <div class="section dashboard-properties">
-          <div class="section-head-row">
-            <div>
-              <div class="dash-eyebrow">YOUR RESEARCH</div>
-              <h2>Your properties</h2>
-              <div class="hint">Every property you've analysed. Open one to load it back into the model.</div>
+        <div class="dashboard-secondary-details">
+          <details>
+            <summary>Explore more analysis — growth scenarios, cash flow and cumulative position</summary>
+            <div class="dashboard-detail-content">
+              <div class="section"><h2>Growth scenarios</h2><div class="hint">Compare 3%, 5% and 7% capital growth with all other assumptions unchanged.</div><div class="table-wrap"><table id="growth-table"></table></div></div>
+              <div class="chart-row">
+                <div class="section"><h2>After-tax cash flow</h2><div class="chart-box half-height"><canvas id="chart-ov-cash"></canvas></div></div>
+                <div class="section"><h2>Cumulative position</h2><div class="chart-box half-height"><canvas id="chart-ov-cum"></canvas></div></div>
+              </div>
             </div>
-            <button id="dash-add-inline" class="secondary">Add property</button>
-          </div>
-          <div id="dash-props" class="prop-grid"></div>
+          </details>
         </div>
-
-        <div class="section-head-row dash-break">
-          <div>
-            <div class="dash-eyebrow">CURRENT SCENARIO</div>
-            <h2>Portfolio analysis</h2>
-            <div class="hint">The numbers behind the current scenario.</div>
-          </div>
-        </div>
-
-        <div id="overview-cards" class="cards"></div>
-
-        <div class="section">
-          <h2>Property detail</h2>
-          <div class="hint">Every investment property in this scenario. Open a property's tab in Inputs to edit it.</div>
-          <div class="table-wrap"><table id="overview-props"></table></div>
-        </div>
-
-        <div class="section">
-          <h2>Growth scenarios</h2>
-          <div class="hint">The same portfolio at 3% / 5% / 7% capital growth — everything else unchanged.</div>
-          <div class="table-wrap"><table id="growth-table"></table></div>
-        </div>
-
-        <div class="section dashboard-chart-panel">
-          <h2>Growth &amp; equity</h2>
-          <div class="hint">Property value vs total investment debt vs net equity, over the full hold.</div>
-          <div class="chart-box"><canvas id="chart-ov-equity"></canvas></div>
-        </div>
-
-        <div class="chart-row">
-          <div class="section dashboard-chart-panel">
-            <h2>After-tax cash flow</h2>
-            <div class="hint">Negative bars = money out of pocket each year.</div>
-            <div class="chart-box half-height"><canvas id="chart-ov-cash"></canvas></div>
-          </div>
-          <div class="section dashboard-chart-panel">
-            <h2>Cumulative position</h2>
-            <div class="hint">Equity + cumulative cash flow − initial cash. This is wealth created vs not buying.</div>
-            <div class="chart-box half-height"><canvas id="chart-ov-cum"></canvas></div>
-          </div>
-        </div>
+        <div id="dash-stats" class="dashboard-legacy-stats" aria-hidden="true"></div>
+        <div class="dashboard-legacy-chart"><canvas id="chart-dash-scores"></canvas></div>
       </section>
 
       <!-- ==================== INPUTS ==================== -->
