@@ -1,6 +1,6 @@
 # Property Analyser — UI Modernisation Plan
 
-**Status:** Milestones 1 and 2 implemented on the feature branch; verification pending  
+**Status:** Initial visual implementations for Milestones 1–5 are on the feature branch; runtime verification and deeper workflow refinements remain pending  
 **Product direction:** Premium, trustworthy Australian property-investment analysis  
 **Implementation constraint:** Preserve the existing Flask + vanilla JavaScript stack and all financial behaviour.
 
@@ -98,15 +98,21 @@ Navigation consolidation is a UX proposal, not permission to remove or silently 
 - Improve dashboard hierarchy, KPI cards, property cards, activity and chart presentation.
 - Preserve all existing dashboard metrics and data.
 
-### 3. Properties and investment analysis
-- Improve property discovery and property-detail organisation.
-- Refine the input workflow while retaining every existing input and advanced setting.
+### 3. Properties and investment analysis — initial visual pass implemented; verification/refinement pending
+- Added a consistent page introduction and hierarchy for investment assumptions and property intelligence.
+- Refined property tabs, grouped input surfaces, field sizing, advanced controls and responsive layouts.
+- Refined the property map presentation, map controls and government-evidence panels.
+- Remaining refinement: a guided multi-step input flow and searchable property library require a separate interaction design pass; current inputs and property selection remain intact.
 
-### 4. Financial analytics
-- Harmonise cash flow, projections, exit/CGT, borrowing and actuals views.
+### 4. Financial analytics — visual harmonisation implemented; verification pending
+- Added consistent page introductions for cash flow, projections, exit/CGT, borrowing and actuals.
+- Harmonised analytics panels, selectors, tables, charts and responsive layouts.
+- Existing forecast and actual-data behaviour remains unchanged.
 
-### 5. Market intelligence
-- Improve area reports, comparable sales and property intelligence/map presentation.
+### 5. Market intelligence — visual harmonisation implemented; verification pending
+- Added a clear area-research page hierarchy.
+- Refined suburb snapshot cards, investment score panel, comparable-sales search and entry forms, rental evidence, risk checklist and reference data.
+- Refined property map framing, map controls and source/evidence presentation without changing data integrations.
 
 ### 6. Scenarios and reports
 - Improve scenario management/comparison and report discovery/output UX.
@@ -133,6 +139,7 @@ Navigation consolidation is a UX proposal, not permission to remove or silently 
 - Added `static/design-system.css` and loaded it after the existing stylesheet in both the analyser and client portal.
 - The shared layer centralises a restrained navy/blue/neutral palette, light/dark tokens, typography, spacing, radii, focus rings and component refinements without replacing the existing stylesheet.
 - Added a dashboard hero with clear actions, refined KPI layout, activity/score panels, property cards and responsive breakpoints.
+- Added page-level introductions and visual refinements for Milestones 3–5 in `static/index.html` and `static/design-system.css`; these are presentation-only changes and retain existing DOM IDs, field bindings, API calls and calculations.
 - Renamed the dashboard KPI from “Portfolio value” to “Purchase value” because it is calculated from purchase prices, not current market valuations.
 - Corrected weekly property-card display to distinguish out-of-pocket cost, surplus and break-even; included a score of exactly zero in the lowest score band.
 - No financial formulas, backend routes, database schema, authentication or scenario persistence code was changed.
