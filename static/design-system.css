@@ -1514,3 +1514,12 @@ body.sidebar-collapsed .subbar { width:calc(100% - var(--app-sidebar-compact, 4.
 @media(min-width:761px) {
  .dashboard-v2 { padding-top:.15rem; }
 }
+
+
+/* Milestone 16 — replace low-value cumulative chart with decision views */
+.dashboard-decision-charts { display:grid;grid-template-columns:1fr 1fr;gap:1rem; }
+.dashboard-decision-charts>.section { min-width:0;padding:1rem;border:1px solid var(--bd);border-radius:.85rem;background:var(--card); }
+.dashboard-decision-charts>.section h2 { margin:.1rem 0 .35rem;font-size:.9rem; }
+.dashboard-decision-charts>.section .hint { min-height:2.5em;font-size:.68rem;line-height:1.45; }
+.dashboard-decision-charts .chart-box { height:260px; }
+@media(max-width:900px){.dashboard-decision-charts{grid-template-columns:1fr}}
