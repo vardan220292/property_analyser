@@ -1686,31 +1686,52 @@
       },
       options: baseOpts(),
     });
+    // Decision-useful annual cash contribution: positive means cash required,
+    // negative means an after-tax surplus. This also makes the IO -> P&I step-up visible.
     drawChart('chart-ov-cash', {
       type: 'bar',
       data: {
         labels,
         datasets: [{
-          label: 'After-tax cash flow',
-          data: rows.map((r) => r.afterTaxCashFlow),
-          backgroundColor: rows.map((r) => (r.afterTaxCashFlow < 0 ? COLORS.red : COLORS.green)),
+          label: 'Cash required (+) / surplus (−)',
+          data: rows.map((r) => -r.afterTaxCashFlow),
+          backgroundColor: rows.map((r) => r.afterTaxCashFlow < 0 ? COLORS.amber : COLORS.green),
+          borderRadius: 5,
+          maxBarThickness: 34,
         }],
       },
-      options: baseOpts(),
+      options: {
+        ...baseOpts((v) => (v < 0 ? '−' : '') + fmtMoney(Math.abs(v), 0)),
+        plugins: { ...baseOpts().plugins, tooltip: { callbacks: { label: (ctx) => ' ' + ctx.dataset.label + ': ' + signed(ctx.parsed.y) } } },
+      },
     });
+
+    // Sale waterfall-style breakdown: sale price less costs, tax and both loans.
+    const exitView = viewData();
+    const x = exitView.exit;
+    const exitLabels = ['Sale price', 'Selling costs', 'CGT', 'IP loan payout', 'Equity loan payout', 'Cash received'];
+    const exitValues = [x.salePrice, -x.sellingCosts, -x.capitalGainsTax,
+      -x.ipLoanBalanceAtSale, -x.equityLoanBalanceAtSale, x.netSaleProceeds];
     drawChart('chart-ov-cum', {
-      type: 'line',
+      type: 'bar',
       data: {
-        labels,
+        labels: exitLabels,
         datasets: [{
-          label: 'Cumulative position',
-          data: rows.map((r) => r.cumulativePosition),
-          borderColor: COLORS.purple, backgroundColor: COLORS.purple,
-          tension: 0.15, pointRadius: 0, fill: true,
-          fillColor: 'rgba(124,58,237,0.08)',
+          label: 'Estimated amount',
+          data: exitValues,
+          backgroundColor: exitValues.map((v, i) => i === 0 ? COLORS.pri : i === 5 ? COLORS.green : COLORS.red),
+          borderRadius: 5,
         }],
       },
-      options: baseOpts(),
+      options: {
+        ...baseOpts((v) => (v < 0 ? '−' : '') + fmtMoney(Math.abs(v), 0)),
+        indexAxis: 'y',
+        plugins: { ...baseOpts().plugins, legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' ' + signed(ctx.parsed.x) } } },
+        scales: {
+          x: { ticks: { color: cssVar('--chart-tick') || '#64748b', callback: (v) => (v < 0 ? '−' : '') + fmtMoney(Math.abs(v), 0) }, grid: { color: cssVar('--chart-grid') || 'rgba(15, 23, 42, 0.08)' } },
+          y: { ticks: { color: cssVar('--chart-tick') || '#64748b' }, grid: { display: false } },
+        },
+      },
     });
     renderGrowthScenarios();
   }
