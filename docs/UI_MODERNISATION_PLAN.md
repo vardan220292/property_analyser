@@ -1,6 +1,6 @@
 # Property Analyser — UI Modernisation Plan
 
-**Status:** Initial visual implementations for Milestones 1–5 are on the feature branch; runtime verification and deeper workflow refinements remain pending  
+**Status:** Initial visual implementations for Milestones 1–8 are on the feature branch; runtime verification and deeper workflow refinements remain pending  
 **Product direction:** Premium, trustworthy Australian property-investment analysis  
 **Implementation constraint:** Preserve the existing Flask + vanilla JavaScript stack and all financial behaviour.
 
@@ -114,14 +114,21 @@ Navigation consolidation is a UX proposal, not permission to remove or silently 
 - Refined suburb snapshot cards, investment score panel, comparable-sales search and entry forms, rental evidence, risk checklist and reference data.
 - Refined property map framing, map controls and source/evidence presentation without changing data integrations.
 
-### 6. Scenarios and reports
-- Improve scenario management/comparison and report discovery/output UX.
+### 6. Scenarios and reports — initial visual pass implemented; workflow verification pending
+- Grouped navigation into Dashboard, Analyse, Research and Manage menus while preserving all existing destination links and access visibility.
+- Added clearer scenario/comparison and client-workspace page introductions.
+- Harmonised saved-scenario tables and comparison chart panels.
+- Existing scenario persistence and report/PDF actions are unchanged; a dedicated report catalogue is not yet implemented.
 
-### 7. Client experience
-- Modernise the BA workspace, client portal and proposal presentation.
+### 7. Client experience — visual harmonisation implemented; verification pending
+- Refined BA workspace cards, forms and action groups.
+- Applied the shared visual language to the client portal, including proposal sections, metrics, sliders and map framing.
+- Authentication, OTP, share-token, proposal adjustment and decision workflows remain unchanged.
 
-### 8. Polish and release
-- Responsive and accessibility pass, cross-browser checks, performance review and regression testing.
+### 8. Polish and release — initial responsive/accessibility pass implemented; full QA pending
+- Added responsive navigation and mobile layout refinements for the main analyser and client portal.
+- Added reduced-motion handling, stronger focus visibility and disabled-control states.
+- Full browser, keyboard, contrast, performance and regression testing remains outstanding.
 
 ## Milestone 1 acceptance criteria
 
@@ -139,7 +146,9 @@ Navigation consolidation is a UX proposal, not permission to remove or silently 
 - Added `static/design-system.css` and loaded it after the existing stylesheet in both the analyser and client portal.
 - The shared layer centralises a restrained navy/blue/neutral palette, light/dark tokens, typography, spacing, radii, focus rings and component refinements without replacing the existing stylesheet.
 - Added a dashboard hero with clear actions, refined KPI layout, activity/score panels, property cards and responsive breakpoints.
-- Added page-level introductions and visual refinements for Milestones 3–5 in `static/index.html` and `static/design-system.css`; these are presentation-only changes and retain existing DOM IDs, field bindings, API calls and calculations.
+- Added page-level introductions and visual refinements for Milestones 3–8 in `static/index.html` and `static/design-system.css`; grouped navigation retains every destination link, and existing DOM IDs, field bindings, API calls and calculations remain intact.
+- Refined the BA workspace and client portal presentation; added responsive navigation, reduced-motion support and stronger focus/disabled states.
+- Added a small navigation behaviour improvement so grouped menus close after selecting a destination.
 - Renamed the dashboard KPI from “Portfolio value” to “Purchase value” because it is calculated from purchase prices, not current market valuations.
 - Corrected weekly property-card display to distinguish out-of-pocket cost, surplus and break-even; included a score of exactly zero in the lowest score band.
 - No financial formulas, backend routes, database schema, authentication or scenario persistence code was changed.
