@@ -1293,3 +1293,14 @@ body.sidebar-collapsed .subbar,body.sidebar-collapsed .announce,body.sidebar-col
  body.sidebar-collapsed .app-sidebar #nav > a::before,body.sidebar-collapsed .app-sidebar #nav .nav-group > summary::before { width:.48rem;height:.48rem;flex-basis:.48rem; }
  .subbar { top:auto; }
 }
+
+/* Compact sidebar keeps section groups reachable as fly-out menus. */
+body.sidebar-collapsed .app-sidebar #nav .nav-group { position:relative; }
+body.sidebar-collapsed .app-sidebar #nav .nav-group > summary { display:flex;justify-content:center;padding:.7rem .35rem;font-size:0; }
+body.sidebar-collapsed .app-sidebar #nav .nav-group > summary::before { width:.62rem;height:.62rem;flex-basis:.62rem; }
+body.sidebar-collapsed .app-sidebar #nav .nav-group > summary::after { display:none; }
+body.sidebar-collapsed .app-sidebar #nav .nav-group[open] .nav-menu {
+ display:block;position:absolute;left:calc(100% + .55rem);top:0;z-index:60;
+ min-width:12rem;margin:0;padding:.45rem;border:1px solid var(--bd);border-radius:.8rem;
+ background:var(--card);box-shadow:var(--shadow-lift);
+}
