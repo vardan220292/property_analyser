@@ -847,26 +847,29 @@
     if (!root) return;
     const result = state.result, metrics = result && result.metrics;
     const props = (result && result.properties) || [], inputs = state.inputs || {};
-    const value = metrics ? Number(metrics.endingPropertyValue || 0) : 0;
-    const debt = metrics ? Number(metrics.endingDebt || 0) : 0;
-    const equity = metrics ? Number(metrics.endingEquity || 0) : 0;
-    const lvr = value > 0 ? debt / value : null;
+    const money = (v) => Number.isFinite(Number(v)) ? fmtMoney(Number(v)) : '—';
     const weekly = metrics ? Number(metrics.weeklyOutOfPocket || 0) : null;
     const cards = [
-      ['Projected property value',metrics?fmtMoney(value):'—','At end of hold period','blue'],
-      ['Projected investment debt',metrics?fmtMoney(debt):'—','Remaining loan balances','neutral'],
-      ['Projected net equity',metrics?fmtMoney(equity):'—','Value less investment debt',equity>=0?'good':'bad'],
-      ['Year-one weekly position',weekly===null?'—':(weekly>0?fmtMoney(weekly)+' out':fmtMoney(Math.abs(weekly))+' surplus'),'After tax, current scenario',weekly===null?'neutral':weekly>0?'warn':'good'],
-      ['Portfolio LVR',lvr===null?'—':fmtPct(lvr,1),'Projected debt ÷ property value',lvr!==null&&lvr>.8?'warn':'neutral'],
-      ['Gross rental yield',metrics?fmtPct(metrics.grossYield||0,2):'—','Current scenario, year one','neutral']
+      ['Purchase value', metrics ? money(metrics.purchasePrice) : '—', 'Combined purchase price', 'blue'],
+      ['Investment debt', metrics ? money(metrics.ipLoanAmount) : '—', 'Initial investment loan exposure', 'neutral'],
+      ['Cash required upfront', metrics ? money(metrics.initialCashInvested) : '—', 'Deposit and acquisition costs', 'neutral'],
+      ['Weekly after-tax position', weekly === null ? '—' : (weekly > 0 ? money(weekly) + ' out' : money(Math.abs(weekly)) + ' surplus'), 'Year one · current assumptions', weekly === null ? 'neutral' : weekly > 0 ? 'warn' : 'good'],
+      ['Gross rental yield', metrics ? fmtPct(metrics.grossYield || 0, 2) : '—', 'Combined scenario yield', 'neutral'],
+      ['10-year equity', metrics ? money(metrics.tenYearEquity) : '—', 'Projected equity at year ten', metrics && metrics.tenYearEquity >= 0 ? 'good' : 'bad']
     ];
-    root.innerHTML=cards.map(x=>'<div class="portfolio-kpi '+x[3]+'"><div class="portfolio-kpi-label">'+escapeHtml(x[0])+'</div><div class="portfolio-kpi-value">'+escapeHtml(x[1])+'</div><div class="portfolio-kpi-note">'+escapeHtml(x[2])+'</div></div>').join('');
-    const context=$('#portfolio-snapshot-context'); if(context) context.textContent=inputs.scenarioName||'Unsaved draft';
-    const ranked=props.map((p,i)=>{const m=p.metrics||{},raw=inputs.properties&&inputs.properties[i]||{};return {label:raw.label||raw.address||('Property '+(i+1)),cash:Number(m.year1AfterTaxCashFlow||0),yield:m.grossYield};}).sort((x,y)=>y.cash-x.cash);
-    const performance=$('#portfolio-performance');
-    if(performance) performance.innerHTML=ranked.length?ranked.map((p,i)=>'<div class="performance-row"><span class="performance-rank">'+(i+1)+'</span><span class="performance-name">'+escapeHtml(p.label)+'</span><span class="performance-yield">'+(p.yield==null?'—':fmtPct(p.yield,2))+'</span><strong class="'+(p.cash>=0?'positive':'negative')+'">'+(p.cash>=0?'+':'−')+fmtMoney(Math.abs(p.cash))+'/yr</strong></div>').join(''):'<div class="empty-note">Add an investment property to see its performance here.</div>';
-    const alerts=$('#portfolio-alerts'), warnings=(result&&result.warnings||[]).slice(0,4);
-    if(alerts) alerts.innerHTML=warnings.length?warnings.map(w=>'<div class="portfolio-alert"><span class="alert-dot"></span><span>'+escapeHtml(w)+'</span></div>').join(''):'<div class="portfolio-clear"><span>✓</span><div><strong>No calculation warnings</strong><small>Review assumptions and lender/tax inputs before relying on projections.</small></div></div>';
+    root.innerHTML = cards.map(x => '<div class="portfolio-kpi ' + x[3] + '"><div class="portfolio-kpi-label">' + escapeHtml(x[0]) + '</div><div class="portfolio-kpi-value">' + escapeHtml(x[1]) + '</div><div class="portfolio-kpi-note">' + escapeHtml(x[2]) + '</div></div>').join('');
+    const context = $('#portfolio-snapshot-context');
+    if (context) context.textContent = inputs.scenarioName || 'Unsaved scenario';
+    const ranked = props.map((p, i) => {
+      const m = p.metrics || {}, raw = inputs.properties && inputs.properties[i] || {};
+      return { label: raw.label || raw.address || ('Property ' + (i + 1)), cash: Number(m.year1AfterTaxCashFlow || 0), yield: m.grossYield };
+    }).sort((x, y) => y.cash - x.cash);
+    const performance = $('#portfolio-performance');
+    if (performance) performance.innerHTML = ranked.length ? ranked.map((p, i) =>
+      '<div class="performance-row"><span class="performance-rank">' + (i + 1) + '</span><span class="performance-name">' + escapeHtml(p.label) + '</span><span class="performance-yield">' + (p.yield == null ? '—' : fmtPct(p.yield, 2)) + '</span><strong class="' + (p.cash >= 0 ? 'positive' : 'negative') + '">' + (p.cash >= 0 ? '+' : '−') + fmtMoney(Math.abs(p.cash)) + '/yr</strong></div>'
+    ).join('') : '<div class="empty-note">Add an investment property to see its performance here.</div>';
+    const alerts = $('#portfolio-alerts'), warnings = (result && result.warnings || []).slice(0, 4);
+    if (alerts) alerts.innerHTML = warnings.length ? warnings.map(w => '<div class="portfolio-alert"><span class="alert-dot"></span><span>' + escapeHtml(w) + '</span></div>').join('') : '<div class="portfolio-clear"><span>✓</span><div><strong>No calculation warnings</strong><small>Confirm assumptions with your lender and tax adviser before making decisions.</small></div></div>';
   }
 
   function renderDashboard(list) {
