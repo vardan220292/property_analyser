@@ -238,3 +238,81 @@ td, th { padding: 0.6rem 0.7rem; }
     scroll-behavior: auto !important;
   }
 }
+
+
+/* ---------------- premium dashboard (milestones 1–2) ---------------- */
+#section-overview { --dashboard-gap: 1rem; }
+.dash-head { align-items: center; justify-content: space-between; gap: 1.5rem; padding: 0.4rem 0 1.15rem; margin-bottom: 0.35rem; }
+.dash-heading-copy { min-width: 0; }
+.dash-eyebrow { color: var(--pri); font-size: 0.66rem; font-weight: 800; letter-spacing: 0.12em; line-height: 1.4; margin-bottom: 0.4rem; }
+.dash-title { color: var(--txt); font-size: clamp(1.65rem, 2.6vw, 2.15rem); font-weight: 760; letter-spacing: -0.045em; line-height: 1.12; }
+.dash-sub { max-width: 48rem; font-size: 0.88rem; line-height: 1.6; margin-top: 0.5rem; }
+.dash-sub span { color: var(--txt); font-weight: 700; }
+.dash-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.55rem; flex: none; }
+.dash-actions .icon-btn { width: 2.5rem; height: 2.5rem; }
+.dash-actions button { white-space: nowrap; }
+#dash-stats.stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.85rem; margin-bottom: 1.1rem; }
+#dash-stats .stat-card { min-width: 0; padding: 1.1rem 1.15rem 1rem; border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+#dash-stats .stat-label { color: var(--muted); font-size: 0.75rem; font-weight: 650; letter-spacing: 0; }
+#dash-stats .stat-value { color: var(--txt); font-size: clamp(1.35rem, 2vw, 1.9rem); font-weight: 760; letter-spacing: -0.045em; line-height: 1.2; margin-top: 0.65rem; overflow-wrap: anywhere; }
+#dash-stats .stat-value.amber { color: var(--amber); }
+#dash-stats .stat-value.good { color: var(--good); }
+#dash-stats .stat-foot { min-height: 1.2rem; font-size: 0.7rem; line-height: 1.45; }
+#dash-stats .stat-chip { top: 0.85rem; right: 0.9rem; width: 2rem; height: 2rem; border-radius: 0.65rem; }
+#dash-stats .stat-chip svg { width: 1rem; height: 1rem; }
+#section-overview .dash-row { grid-template-columns: minmax(17rem, 0.9fr) minmax(0, 1.35fr); gap: var(--dashboard-gap); margin-bottom: 1rem; }
+#section-overview .dashboard-panel { margin-top: 0; min-width: 0; padding: 1.15rem 1.25rem; }
+#section-overview .dashboard-panel h2, #section-overview .dashboard-chart-panel h2 { font-size: 0.98rem; font-weight: 740; letter-spacing: -0.025em; }
+#section-overview .dashboard-panel .hint, #section-overview .dashboard-chart-panel .hint { font-size: 0.74rem; margin-bottom: 0.5rem; }
+#section-overview .dashboard-score-panel .chart-box { height: 12rem; margin-top: 0.35rem; }
+#section-overview .activity-list { margin-top: 0.4rem; }
+#section-overview .activity-row { padding: 0.58rem 0; gap: 0.65rem; }
+#section-overview .activity-icon { width: 2.1rem; height: 2.1rem; border-radius: 0.7rem; }
+#section-overview .activity-title { font-size: 0.76rem; line-height: 1.4; }
+#section-overview .activity-time { font-size: 0.67rem; }
+#section-overview .dashboard-properties { margin-top: 1rem; padding: 1.2rem 1.25rem 1.3rem; }
+#section-overview .dashboard-properties .section-head-row { align-items: center; margin-bottom: 0.35rem; }
+#section-overview .dashboard-properties .section-head-row h2 { font-size: 1.05rem; font-weight: 750; }
+#section-overview .prop-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 18.5rem), 1fr)); gap: 0.85rem; margin-top: 0.85rem; }
+#section-overview .prop-card { border-radius: var(--radius-lg); box-shadow: none; }
+#section-overview .prop-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
+#section-overview .prop-hero { min-height: 6.25rem; padding: 1rem 1.1rem; background: linear-gradient(120deg, #1e3a5f, #2563eb); }
+#section-overview .prop-hero.alt { background: linear-gradient(120deg, #155e75, #2563eb); }
+#section-overview .prop-hero.deep { background: linear-gradient(120deg, #172554, #334b79); }
+#section-overview .prop-hero .prop-addr { font-size: 0.9rem; font-weight: 730; }
+#section-overview .prop-hero .prop-sub { font-size: 0.69rem; }
+#section-overview .prop-body { padding: 0.9rem 1rem 1rem; }
+#section-overview .prop-summary { border-radius: 0.6rem; padding: 0.55rem 0.65rem; font-size: 0.72rem; }
+#section-overview .prop-stats { gap: 0.55rem 0.8rem; }
+#section-overview .prop-stat .k { font-size: 0.65rem; }
+#section-overview .prop-stat .v { font-size: 0.78rem; overflow-wrap: anywhere; }
+#section-overview .prop-card-actions { margin-top: 0.75rem; }
+#section-overview .prop-card-actions button { min-height: 2.25rem; }
+#section-overview .dash-break { align-items: flex-end; margin-top: 1.65rem; margin-bottom: 0.65rem; }
+#section-overview .dash-break h2 { font-size: 1.15rem; font-weight: 760; }
+#section-overview #overview-cards { margin-top: 0; }
+#section-overview > .section { margin-top: 0.9rem; }
+#section-overview .dashboard-chart-panel { margin-top: 0.9rem; }
+#section-overview .dashboard-chart-panel .chart-box { margin-top: 0.45rem; }
+#section-overview .chart-row { gap: var(--dashboard-gap); }
+#section-overview .empty-note { border: 1px dashed var(--bd-strong); border-radius: var(--radius-md); background: var(--hover); padding: 1.25rem; line-height: 1.55; }
+@media (max-width: 1050px) {
+  #dash-stats.stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #section-overview .dash-row { grid-template-columns: 1fr 1.2fr; }
+}
+@media (max-width: 760px) {
+  .dash-head { align-items: flex-start; flex-direction: column; }
+  .dash-actions { width: 100%; justify-content: flex-start; }
+  #section-overview .dash-row { grid-template-columns: 1fr; }
+  #section-overview .dashboard-score-panel .chart-box { height: 11rem; }
+  #section-overview .section-head-row { align-items: flex-start; }
+}
+@media (max-width: 480px) {
+  #dash-stats.stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
+  #dash-stats .stat-card { padding: 0.85rem; }
+  #dash-stats .stat-value { font-size: 1.25rem; }
+  #dash-stats .stat-chip { width: 1.7rem; height: 1.7rem; top: 0.65rem; right: 0.65rem; }
+  .dash-actions { flex-wrap: wrap; }
+  .dash-actions button { flex: 1; }
+  #section-overview .prop-grid { grid-template-columns: 1fr; }
+}
