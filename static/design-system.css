@@ -1304,3 +1304,64 @@ body.sidebar-collapsed .app-sidebar #nav .nav-group[open] .nav-menu {
  min-width:12rem;margin:0;padding:.45rem;border:1px solid var(--bd);border-radius:.8rem;
  background:var(--card);box-shadow:var(--shadow-lift);
 }
+
+
+/* Milestone 11 — portfolio snapshot and investment health */
+.portfolio-snapshot{margin:1.1rem 0 1.4rem;padding:1.35rem;border:1px solid var(--dash-line);border-radius:1.05rem;background:var(--card)}
+.portfolio-snapshot .section-head-row{align-items:center;margin-bottom:1rem}
+.portfolio-snapshot h2{margin:.12rem 0 .2rem;font-size:1.08rem;letter-spacing:-.035em}
+.snapshot-context{padding:.35rem .65rem;border:1px solid var(--bd);border-radius:999px;color:var(--muted);font-size:.7rem;max-width:12rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.portfolio-kpi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem}
+.portfolio-kpi{min-width:0;padding:1rem;border:1px solid var(--bd);border-radius:.8rem;background:var(--bg)}
+.portfolio-kpi-label{color:var(--muted);font-size:.72rem;font-weight:650}
+.portfolio-kpi-value{margin:.4rem 0 .18rem;color:var(--txt);font-size:clamp(1.05rem,2vw,1.45rem);font-weight:780;letter-spacing:-.04em;overflow-wrap:anywhere}
+.portfolio-kpi-note{color:var(--muted);font-size:.67rem}
+.portfolio-kpi.good .portfolio-kpi-value,.performance-row .positive{color:var(--good)}
+.portfolio-kpi.bad .portfolio-kpi-value,.performance-row .negative{color:var(--bad)}
+.portfolio-kpi.warn .portfolio-kpi-value{color:var(--amber)}
+.portfolio-insight-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:1rem;margin-top:1rem}
+.portfolio-insight{min-width:0;padding:1rem;border:1px solid var(--bd);border-radius:.85rem}
+.insight-heading{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.4rem;margin-bottom:.7rem}
+.insight-heading h3{margin:0;font-size:.88rem}
+.insight-heading .hint{margin:0;font-size:.68rem}
+.performance-row{display:grid;grid-template-columns:1.6rem minmax(0,1fr) 3.8rem minmax(7rem,auto);align-items:center;gap:.55rem;padding:.65rem 0;border-top:1px solid var(--bd);font-size:.72rem}
+.performance-rank{display:grid;place-items:center;width:1.45rem;height:1.45rem;border-radius:.45rem;background:var(--pri-soft);color:var(--pri);font-weight:750}
+.performance-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt);font-weight:650}
+.performance-yield{color:var(--muted);text-align:right}
+.performance-row strong{text-align:right;font-size:.7rem;white-space:nowrap}
+.portfolio-alert{display:flex;gap:.6rem;align-items:flex-start;padding:.6rem 0;border-top:1px solid var(--bd);color:var(--muted);font-size:.72rem;line-height:1.45}
+.alert-dot{width:.42rem;height:.42rem;flex:0 0 .42rem;margin-top:.28rem;border-radius:50%;background:var(--amber)}
+.portfolio-clear{display:flex;gap:.65rem;align-items:flex-start;padding:.65rem 0;color:var(--good)}
+.portfolio-clear>span{font-weight:800}
+.portfolio-clear div{display:flex;flex-direction:column;gap:.2rem}
+.portfolio-clear strong{font-size:.76rem}
+.portfolio-clear small{color:var(--muted);font-size:.68rem;line-height:1.4}
+
+/* Milestone 12 — guided investment inputs */
+.input-guide{margin:.4rem 0 1rem;padding:1.2rem 1.3rem;border:1px solid var(--dash-line);border-radius:1rem;background:var(--card)}
+.input-guide-head{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}
+.input-guide-head h2{margin:.12rem 0 .2rem;font-size:1.05rem;letter-spacing:-.035em}
+.input-guide-head p{margin:0;color:var(--muted);font-size:.76rem}
+.guide-progress{min-width:8.5rem;display:flex;flex-direction:column;gap:.15rem;text-align:right}
+.guide-progress strong{color:var(--pri);font-size:1.35rem;line-height:1.2}
+.guide-progress span{color:var(--muted);font-size:.65rem}
+.guide-progress i{display:block;height:5px;margin-top:.25rem;border-radius:99px;background:var(--bg);overflow:hidden}
+.guide-progress i b{display:block;height:100%;border-radius:99px;background:var(--pri);transition:width .2s ease}
+.guide-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem;margin-top:1rem}
+.guide-steps button{display:flex;flex-direction:column;align-items:flex-start;gap:.2rem;min-width:0;padding:.75rem;border:1px solid var(--bd);border-radius:.75rem;background:var(--bg);color:var(--txt);text-align:left;cursor:pointer}
+.guide-steps button:hover,.guide-steps button.active{border-color:var(--pri);background:var(--pri-soft)}
+.guide-steps button>span{color:var(--pri);font-size:.65rem;font-weight:800;letter-spacing:.08em}
+.guide-steps button strong{font-size:.76rem}
+.guide-steps button small{color:var(--muted);font-size:.65rem;line-height:1.35}
+.guide-checklist{display:flex;flex-wrap:wrap;gap:.45rem 1rem;margin-top:.8rem;padding-top:.7rem;border-top:1px solid var(--bd)}
+.guide-checklist span{color:var(--muted);font-size:.68rem}
+.guide-checklist span.done{color:var(--good)}
+#section-inputs .prop-page>.section{border:1px solid var(--dash-line);border-radius:1rem}
+#section-inputs .prop-page>.section>h2{font-size:.98rem;letter-spacing:-.03em}
+#section-inputs .field label{color:var(--txt);font-weight:650}
+#section-inputs .field input:not([type=checkbox]):not([type=file]),#section-inputs .field select{min-height:2.7rem;border-radius:.65rem}
+#section-inputs details.advanced{border:1px solid var(--bd);border-radius:.75rem;background:var(--bg);margin:.65rem 0}
+#section-inputs details.advanced>summary{padding:.8rem .95rem;font-size:.78rem;font-weight:700}
+#section-inputs details.advanced[open]>summary{border-bottom:1px solid var(--bd)}
+#section-inputs details.advanced>.grid-form{padding:.95rem}
+@media(max-width:760px){.portfolio-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.portfolio-insight-grid{grid-template-columns:1fr}.performance-row{grid-template-columns:1.5rem minmax(0,1fr) 3.2rem}.performance-row strong{grid-column:2/-1;text-align:left}.input-guide-head{flex-direction:column}.guide-progress{width:100%;text-align:left}.guide-steps{grid-template-columns:1fr}}
