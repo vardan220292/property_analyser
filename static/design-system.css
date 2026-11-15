@@ -497,3 +497,321 @@ td, th { padding: 0.6rem 0.7rem; }
   #section-overview .dash-title { font-size: 1.7rem; }
   #dash-stats .stat-card { min-height: 8.5rem; }
 }
+
+
+/* ================================================================
+   Milestones 3–5 — properties, financial analytics & market intelligence
+   Presentation-only layer. Existing IDs, inputs, APIs and calculations
+   remain unchanged.
+   ================================================================ */
+
+/* Shared page introductions */
+.page-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: .35rem .15rem 1.05rem;
+  margin-bottom: .25rem;
+}
+.page-intro-copy { max-width: 58rem; }
+.page-eyebrow {
+  color: var(--pri);
+  font-size: .66rem;
+  font-weight: 800;
+  letter-spacing: .15em;
+  margin-bottom: .42rem;
+}
+.page-title {
+  margin: 0;
+  color: var(--txt);
+  font-size: clamp(1.55rem, 2.6vw, 2rem);
+  font-weight: 780;
+  letter-spacing: -.05em;
+  line-height: 1.12;
+}
+.page-description {
+  margin-top: .48rem;
+  color: var(--muted);
+  font-size: .84rem;
+  line-height: 1.6;
+  max-width: 52rem;
+}
+.section-page > .section:first-of-type { margin-top: .35rem; }
+
+/* Milestone 3 — property library and investment inputs */
+#section-inputs > .page-intro { margin-bottom: .65rem; }
+#section-inputs .prop-tabs {
+  position: sticky;
+  top: 7.1rem;
+  z-index: 9;
+  padding: .7rem .8rem;
+  margin: 0 0 1rem;
+  border: 1px solid var(--bd);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 5px 18px rgba(20,38,67,.045);
+}
+#section-inputs .prop-tab {
+  min-height: 2.45rem;
+  border-radius: .72rem;
+  padding: .55rem .95rem;
+  background: var(--hover);
+}
+#section-inputs .prop-tab.active {
+  background: linear-gradient(135deg,#244b88,#4779cf);
+  box-shadow: 0 5px 14px rgba(42,88,157,.18);
+}
+#section-inputs .prop-tab.prop-tab-add {
+  border-style: dashed;
+  background: transparent;
+}
+#section-inputs .prop-page > .section,
+#section-inputs .prop-page > details.advanced {
+  border: 1px solid var(--dash-line);
+  border-radius: 1.05rem;
+  background: var(--card);
+  box-shadow: 0 5px 20px rgba(20,38,67,.035);
+}
+#section-inputs .prop-page > .section { padding: 1.4rem 1.5rem; }
+#section-inputs .prop-page > .section > h2 { font-size: 1.02rem; letter-spacing: -.035em; }
+#section-inputs .prop-page > .section > .hint { max-width: 58rem; line-height: 1.55; }
+#section-inputs .grid-form {
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,15rem),1fr));
+  gap: 1rem 1.15rem;
+}
+#section-inputs .field { gap: .38rem; }
+#section-inputs .field label { color: var(--txt); font-size: .75rem; font-weight: 650; }
+#section-inputs .field .unit { color: var(--muted); font-weight: 500; }
+#section-inputs .field input:not([type=checkbox]),
+#section-inputs .field select {
+  min-height: 2.75rem;
+  padding: .62rem .75rem;
+  border-radius: .72rem;
+  background: var(--bg);
+}
+#section-inputs details.advanced {
+  padding: .95rem 1.1rem;
+  background: var(--hover);
+}
+#section-inputs details.advanced > summary {
+  font-size: .82rem;
+  color: var(--txt);
+  padding: .2rem 0;
+}
+#section-inputs details.advanced[open] > summary { color: var(--pri); }
+#section-inputs .subset {
+  border-top-color: var(--bd);
+  margin-top: 1.35rem;
+  padding-top: 1.15rem;
+}
+#section-inputs .subset h3 {
+  color: var(--txt);
+  font-size: .82rem;
+  font-weight: 750;
+}
+
+/* Property intelligence — map is the primary visual, evidence is structured */
+#section-property > .section:first-of-type {
+  overflow: hidden;
+  padding: 0;
+}
+#section-property > .section:first-of-type > h2,
+#section-property > .section:first-of-type > .hint {
+  margin-left: 1.4rem;
+  margin-right: 1.4rem;
+}
+#section-property > .section:first-of-type > h2 { margin-top: 1.35rem; }
+#section-property .prop-map-wrap {
+  margin: 1rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--bd);
+  border-radius: 0 0 1rem 1rem;
+  overflow: hidden;
+}
+#section-property #property-map { min-height: 27rem; }
+#section-property .prop-map-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .65rem;
+  padding: .8rem 1rem;
+  background: var(--card);
+  border-top: 1px solid var(--bd);
+}
+#section-property .prop-ctl-group { display: flex; flex-wrap: wrap; gap: .4rem; }
+#section-property .prop-ctl-group .chip {
+  min-height: 2.25rem;
+  border-radius: .65rem;
+  padding: .45rem .75rem;
+  background: var(--hover);
+}
+#section-property .prop-ctl-group .chip.active {
+  background: var(--pri-soft);
+  border-color: var(--pri);
+  color: var(--pri);
+}
+#section-property #property-status {
+  padding: .6rem 1rem;
+  background: var(--hover);
+}
+#section-property #property-cards { grid-template-columns: repeat(auto-fit,minmax(13rem,1fr)); }
+#section-property #property-details { margin-top: 1rem; }
+#section-property #property-sources,
+#section-area #area-links { line-height: 1.6; }
+
+/* Milestone 5 — area, comparable evidence and risk review */
+#section-area > .section {
+  border: 1px solid var(--dash-line);
+  border-radius: 1.05rem;
+  box-shadow: 0 5px 20px rgba(20,38,67,.035);
+  padding: 1.4rem 1.5rem;
+}
+#section-area > .section > h2 { font-size: 1rem; letter-spacing: -.035em; }
+#section-area > .section > .hint { max-width: 62rem; line-height: 1.55; }
+#section-area #area-cards {
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,13rem),1fr));
+  gap: .8rem;
+}
+#section-area #area-cards .card {
+  border-radius: .9rem;
+  box-shadow: none;
+  background: linear-gradient(145deg,var(--card),var(--hover));
+}
+#section-area #score-panel { margin: 1rem 0; }
+#section-area .score-panel {
+  border-radius: 1rem;
+  padding: 1.2rem;
+  background: linear-gradient(120deg,var(--pri-soft),transparent 72%),var(--card);
+}
+#section-area .score-big { font-size: 3rem; }
+#section-area .factor-row { min-height: 1.8rem; }
+#section-area #comp-search-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .75rem;
+  padding: .8rem;
+  border-radius: .8rem;
+  background: var(--hover);
+}
+#section-area #comp-form,
+#section-area #rental-form {
+  padding: 1rem;
+  margin-top: .85rem;
+  border: 1px solid var(--bd);
+  border-radius: .9rem;
+  background: var(--bg);
+}
+#section-area #risk-list { display: grid; gap: .55rem; }
+#section-area #risk-list > * {
+  padding: .75rem .9rem;
+  border: 1px solid var(--bd);
+  border-radius: .75rem;
+  background: var(--hover);
+}
+#section-area details.advanced {
+  margin-top: .65rem;
+  background: var(--hover);
+}
+#section-area .table-wrap { margin-top: .8rem; }
+
+/* Milestone 4 — financial analytics: clear context and visual rhythm */
+#section-cashflow > .section:first-of-type,
+#section-projections > .section:first-of-type,
+#section-exit > .section,
+#section-borrowing > .section,
+#section-actuals > .section {
+  border: 1px solid var(--dash-line);
+  border-radius: 1.05rem;
+  box-shadow: 0 5px 20px rgba(20,38,67,.035);
+  padding: 1.4rem 1.5rem;
+}
+#section-cashflow .chart-row,
+#section-projections .chart-row { align-items: stretch; gap: 1rem; }
+#section-cashflow .chart-row > .section,
+#section-projections .chart-row > .section {
+  border: 1px solid var(--dash-line);
+  border-radius: 1.05rem;
+  box-shadow: 0 5px 20px rgba(20,38,67,.035);
+  padding: 1.3rem 1.4rem;
+  min-width: 0;
+}
+#section-cashflow h2,
+#section-projections h2,
+#section-exit h2,
+#section-borrowing h2,
+#section-actuals h2 { font-size: 1rem; letter-spacing: -.035em; }
+#section-cashflow select,
+#section-projections select,
+#section-exit select {
+  min-height: 2.35rem;
+  padding: .4rem .65rem;
+  border: 1px solid var(--bd);
+  border-radius: .65rem;
+  background: var(--bg);
+  color: var(--txt);
+  font: inherit;
+}
+#section-cashflow .table-wrap,
+#section-projections .table-wrap,
+#section-exit .table-wrap,
+#section-actuals .table-wrap {
+  border-radius: .85rem;
+  margin-top: .85rem;
+}
+#section-projections .table-wrap { scrollbar-color: var(--bd-strong) transparent; }
+#section-exit #exit-cards,
+#section-borrowing #borrowing-cards { gap: .8rem; }
+#section-exit #exit-cards .card,
+#section-borrowing #borrowing-cards .card {
+  border-radius: .95rem;
+  box-shadow: none;
+}
+#section-exit .chart-box.tall { height: 24rem; }
+#section-borrowing > .section:first-of-type .grid-form,
+#section-actuals > .section:first-of-type .grid-form {
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,14rem),1fr));
+}
+#section-borrowing .field label,
+#section-actuals .field label { color: var(--txt); font-weight: 650; }
+#section-borrowing .field input,
+#section-actuals .field input,
+#section-actuals .field select {
+  min-height: 2.65rem;
+  border-radius: .7rem;
+  background: var(--bg);
+}
+
+/* Common chart and table polish for all three workstreams */
+.section-page .chart-box canvas { max-width: 100%; }
+.section-page .table-wrap table { min-width: 100%; }
+.section-page .table-wrap th { position: sticky; top: 0; z-index: 1; }
+:root[data-theme="dark"] #section-inputs .prop-page > .section,
+:root[data-theme="dark"] #section-area > .section,
+:root[data-theme="dark"] #section-cashflow .chart-row > .section,
+:root[data-theme="dark"] #section-projections .chart-row > .section,
+:root[data-theme="dark"] #section-cashflow > .section:first-of-type,
+:root[data-theme="dark"] #section-projections > .section:first-of-type,
+:root[data-theme="dark"] #section-exit > .section,
+:root[data-theme="dark"] #section-borrowing > .section,
+:root[data-theme="dark"] #section-actuals > .section {
+  border-color: var(--bd);
+  box-shadow: 0 6px 22px rgba(0,0,0,.16);
+}
+@media (max-width: 760px) {
+  .page-intro { align-items: flex-start; flex-direction: column; gap: .4rem; }
+  #section-inputs .prop-tabs { top: 6.4rem; overflow-x: auto; flex-wrap: nowrap; }
+  #section-property #property-map { min-height: 20rem; }
+  #section-property .prop-map-controls { align-items: flex-start; flex-direction: column; }
+  #section-area > .section,
+  #section-inputs .prop-page > .section { padding: 1rem; }
+  #section-cashflow .chart-row,
+  #section-projections .chart-row { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  #section-inputs .prop-tabs { margin-inline: -.15rem; }
+  #section-area #comp-form,
+  #section-area #rental-form { padding: .75rem; }
+}
