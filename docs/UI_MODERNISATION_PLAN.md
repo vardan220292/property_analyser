@@ -1,6 +1,6 @@
 # Property Analyser — UI Modernisation Plan
 
-**Status:** Milestone 1 in progress  
+**Status:** Milestones 1 and 2 implemented on the feature branch; verification pending  
 **Product direction:** Premium, trustworthy Australian property-investment analysis  
 **Implementation constraint:** Preserve the existing Flask + vanilla JavaScript stack and all financial behaviour.
 
@@ -41,7 +41,7 @@ Navigation consolidation is a UX proposal, not permission to remove or silently 
 
 ### Dashboard
 - Establish a clear page heading and context.
-- Prioritise portfolio value, equity, rental income, cash flow, debt/LVR, property count and gross yield.
+- Prioritise the existing analysed-property count, investment score, best score and clearly labelled purchase value. Do not imply purchase price is current market valuation.
 - Improve property summaries, recent activity and score distribution.
 - Give charts consistent legends, labels, empty states and responsive behaviour.
 
@@ -87,14 +87,14 @@ Navigation consolidation is a UX proposal, not permission to remove or silently 
 
 ## Milestones
 
-### 1. Design foundation
+### 1. Design foundation — implementation complete, verification pending
 - Establish shared design tokens for colour, typography, spacing, radii, shadows and focus states.
 - Harmonise base surfaces, buttons, fields, tables and navigation chrome.
 - Improve keyboard focus, reduced-motion handling and responsive foundations.
 - Apply the shared foundation to the analyser and client portal.
 - Do not change calculations or navigation structure in this milestone.
 
-### 2. Dashboard redesign
+### 2. Dashboard redesign — implementation complete, verification pending
 - Improve dashboard hierarchy, KPI cards, property cards, activity and chart presentation.
 - Preserve all existing dashboard metrics and data.
 
@@ -127,6 +127,15 @@ Navigation consolidation is a UX proposal, not permission to remove or silently 
 - Layout remains usable on desktop, tablet and mobile.
 - No financial formulas, APIs, data structures, authentication or scenario behaviour are changed.
 - Existing engine regression tests pass.
+
+## Implementation notes
+
+- Added `static/design-system.css` and loaded it after the existing stylesheet in both the analyser and client portal.
+- The shared layer centralises a restrained navy/blue/neutral palette, light/dark tokens, typography, spacing, radii, focus rings and component refinements without replacing the existing stylesheet.
+- Added a dashboard hero with clear actions, refined KPI layout, activity/score panels, property cards and responsive breakpoints.
+- Renamed the dashboard KPI from “Portfolio value” to “Purchase value” because it is calculated from purchase prices, not current market valuations.
+- Corrected weekly property-card display to distinguish out-of-pocket cost, surplus and break-even; included a score of exactly zero in the lowest score band.
+- No financial formulas, backend routes, database schema, authentication or scenario persistence code was changed.
 
 ## Verification strategy
 
