@@ -483,7 +483,9 @@
   $('#nav').addEventListener('click', (ev) => {
     const a = ev.target.closest('a[data-target]');
     if (!a) return;
-    $$('#nav a').forEach((x) => x.classList.toggle('active', x === a));
+    $('#nav a').forEach((x) => x.classList.toggle('active', x === a));
+    const navGroup = a.closest('details.nav-group');
+    if (navGroup) navGroup.open = false;
     $$('.section-page').forEach((s) =>
       s.classList.toggle('active', s.id === 'section-' + a.dataset.target));
     document.body.classList.toggle('on-dashboard', a.dataset.target === 'overview');
