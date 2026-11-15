@@ -781,12 +781,12 @@
         foot: best ? best.address : 'No scored properties yet',
       },
       {
-        label: 'Portfolio value',
+        label: 'Purchase value',
         icon: 'calendar',
         value: cur ? fmtMoney(portfolioValue) : '—',
         foot: cur
           ? `${curProps.length} propert${curProps.length === 1 ? 'y' : 'ies'} · avg yield ${fmtPct(avgYield, 2)}`
-          : 'Current scenario',
+          : 'Current scenario purchase total',
       },
     ];
 
@@ -834,7 +834,7 @@
           <div class="prop-stats">
             <div class="prop-stat"><div class="k">Purchase price</div><div class="v">${fmtMoney(it.price)}</div></div>
             <div class="prop-stat"><div class="k">Gross yield</div><div class="v">${it.grossYield === null || it.grossYield === undefined ? '—' : fmtPct(it.grossYield, 2)}</div></div>
-            <div class="prop-stat"><div class="k">Weekly out-of-pocket</div><div class="v">${it.weekly === null || it.weekly === undefined ? '—' : fmtMoney(Math.max(0, it.weekly))}</div></div>
+            <div class="prop-stat"><div class="k">Weekly position</div><div class="v">${it.weekly === null || it.weekly === undefined ? '—' : (it.weekly > 0 ? 'Out of pocket ' + fmtMoney(it.weekly) : it.weekly < 0 ? 'Surplus ' + fmtMoney(Math.abs(it.weekly)) : 'Break-even')}</div></div>
             <div class="prop-stat"><div class="k">10-yr equity</div><div class="v">${it.equity === null || it.equity === undefined ? '—' : fmtMoney(it.equity)}</div></div>
           </div>
           <div class="prop-card-actions">
@@ -852,7 +852,7 @@
       { label: '61-80', min: 60, max: 80 },
       { label: '81-100', min: 80, max: 100.01 },
     ];
-    const counts = bins.map((b) => scored.filter((s) => s.score > b.min && s.score <= b.max).length);
+    const counts = bins.map((b) => scored.filter((s) => s.score >= b.min && s.score <= b.max).length);
     drawChart('chart-dash-scores', {
       type: 'bar',
       data: {
@@ -872,12 +872,20 @@
   function wireDashboard() {
     const refresh = $('#dash-refresh');
     if (refresh) refresh.addEventListener('click', () => loadDashboard(true));
-    const add = $('#dash-add');
-    if (add) add.addEventListener('click', () => {
+    const openInputs = () => {
       const a = document.querySelector('#nav a[data-target="inputs"]');
       if (a) a.click();
       const ip = $('#address-input');
       if (ip) setTimeout(() => ip.focus(), 250);
+    };
+    ['#dash-add', '#dash-add-inline'].forEach((selector) => {
+      const add = $(selector);
+      if (add) add.addEventListener('click', openInputs);
+    });
+    const scenarios = $('#dash-scenarios');
+    if (scenarios) scenarios.addEventListener('click', () => {
+      const a = document.querySelector('#nav a[data-target="scenarios"]');
+      if (a) a.click();
     });
     document.addEventListener('click', (ev) => {
       const open = ev.target.closest('[data-dash-load]');
