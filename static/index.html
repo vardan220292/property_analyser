@@ -83,43 +83,50 @@
       <!-- ==================== DASHBOARD ==================== -->
       <section id="section-overview" class="section-page active">
         <div class="dash-head">
-          <div>
-            <h1 class="dash-title">Dashboard</h1>
-            <div class="dash-sub">Welcome back, <span id="dash-user">there</span> — here's where your property research stands.</div>
+          <div class="dash-heading-copy">
+            <div class="dash-eyebrow">PORTFOLIO OVERVIEW</div>
+            <h1 class="dash-title">Your property dashboard</h1>
+            <div class="dash-sub">Welcome back, <span id="dash-user">there</span>. Track your research, compare opportunities and understand your portfolio.</div>
           </div>
-          <button id="dash-refresh" class="icon-btn lg" title="Refresh dashboard">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-          </button>
+          <div class="dash-actions">
+            <button id="dash-refresh" class="icon-btn lg" title="Refresh dashboard" aria-label="Refresh dashboard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+            </button>
+            <button id="dash-scenarios" class="secondary">Compare scenarios</button>
+            <button id="dash-add" class="primary">+ Add property</button>
+          </div>
         </div>
 
         <div class="stat-grid" id="dash-stats"></div>
 
         <div class="dash-row">
-          <div class="section">
+          <div class="section dashboard-panel">
             <h2>Recent activity</h2>
             <div class="hint">Your latest saves and updates.</div>
             <div id="dash-activity" class="activity-list"></div>
           </div>
-          <div class="section">
+          <div class="section dashboard-panel dashboard-score-panel">
             <h2>Score distribution</h2>
-            <div class="hint">How your analysed properties score on the 0&ndash;100 investment score.</div>
+            <div class="hint">Investment score across your saved properties, from 0 to 100.</div>
             <div class="chart-box half-height"><canvas id="chart-dash-scores"></canvas></div>
           </div>
         </div>
 
-        <div class="section">
+        <div class="section dashboard-properties">
           <div class="section-head-row">
             <div>
+              <div class="dash-eyebrow">YOUR RESEARCH</div>
               <h2>Your properties</h2>
               <div class="hint">Every property you've analysed. Open one to load it back into the model.</div>
             </div>
-            <button id="dash-add" class="primary">Add property</button>
+            <button id="dash-add-inline" class="secondary">Add property</button>
           </div>
           <div id="dash-props" class="prop-grid"></div>
         </div>
 
         <div class="section-head-row dash-break">
           <div>
+            <div class="dash-eyebrow">CURRENT SCENARIO</div>
             <h2>Portfolio analysis</h2>
             <div class="hint">The numbers behind the current scenario.</div>
           </div>
@@ -139,19 +146,19 @@
           <div class="table-wrap"><table id="growth-table"></table></div>
         </div>
 
-        <div class="section">
+        <div class="section dashboard-chart-panel">
           <h2>Growth &amp; equity</h2>
           <div class="hint">Property value vs total investment debt vs net equity, over the full hold.</div>
           <div class="chart-box"><canvas id="chart-ov-equity"></canvas></div>
         </div>
 
         <div class="chart-row">
-          <div class="section">
+          <div class="section dashboard-chart-panel">
             <h2>After-tax cash flow</h2>
             <div class="hint">Negative bars = money out of pocket each year.</div>
             <div class="chart-box half-height"><canvas id="chart-ov-cash"></canvas></div>
           </div>
-          <div class="section">
+          <div class="section dashboard-chart-panel">
             <h2>Cumulative position</h2>
             <div class="hint">Equity + cumulative cash flow − initial cash. This is wealth created vs not buying.</div>
             <div class="chart-box half-height"><canvas id="chart-ov-cum"></canvas></div>
