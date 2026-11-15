@@ -1319,6 +1319,19 @@
     charts[id] = new Chart(el, config);
   }
 
+  // Charts inside the collapsed dashboard details panel are initially measured
+  // at zero width. Resize them after the user expands the panel.
+  document.querySelectorAll('.dashboard-secondary-details details').forEach((details) => {
+    details.addEventListener('toggle', () => {
+      if (!details.open) return;
+      requestAnimationFrame(() => {
+        ['chart-ov-cash', 'chart-ov-cum'].forEach((id) => {
+          if (charts[id]) charts[id].resize();
+        });
+      });
+    });
+  });
+
   const COLORS = {
     pri: '#6366f1', red: '#f43f5e', green: '#10b981', amber: '#f59e0b',
     purple: '#8b5cf6', teal: '#14b8a6', gray: '#94a3b8', pink: '#ec4899',
