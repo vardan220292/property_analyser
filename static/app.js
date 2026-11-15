@@ -847,12 +847,12 @@
 
     // ---- score distribution ----
     const bins = [
-      { label: '0-40', min: 0, max: 40 },
+      { label: '0-40', min: -0.01, max: 40 },
       { label: '41-60', min: 40, max: 60 },
       { label: '61-80', min: 60, max: 80 },
       { label: '81-100', min: 80, max: 100.01 },
     ];
-    const counts = bins.map((b) => scored.filter((s) => s.score >= b.min && s.score <= b.max).length);
+    const counts = bins.map((b) => scored.filter((s) => s.score > b.min && s.score <= b.max).length);
     drawChart('chart-dash-scores', {
       type: 'bar',
       data: {
