@@ -786,6 +786,34 @@
     }
   }
 
+
+  function renderPortfolioSnapshot() {
+    const root = $('#portfolio-kpis');
+    if (!root) return;
+    const result = state.result, metrics = result && result.metrics;
+    const props = (result && result.properties) || [], inputs = state.inputs || {};
+    const value = metrics ? Number(metrics.endingPropertyValue || 0) : 0;
+    const debt = metrics ? Number(metrics.endingDebt || 0) : 0;
+    const equity = metrics ? Number(metrics.endingEquity || 0) : 0;
+    const lvr = value > 0 ? debt / value : null;
+    const weekly = metrics ? Number(metrics.weeklyOutOfPocket || 0) : null;
+    const cards = [
+      ['Projected property value',metrics?fmtMoney(value):'—','At end of hold period','blue'],
+      ['Projected investment debt',metrics?fmtMoney(debt):'—','Remaining loan balances','neutral'],
+      ['Projected net equity',metrics?fmtMoney(equity):'—','Value less investment debt',equity>=0?'good':'bad'],
+      ['Year-one weekly position',weekly===null?'—':(weekly>0?fmtMoney(weekly)+' out':fmtMoney(Math.abs(weekly))+' surplus'),'After tax, current scenario',weekly===null?'neutral':weekly>0?'warn':'good'],
+      ['Portfolio LVR',lvr===null?'—':fmtPct(lvr,1),'Projected debt ÷ property value',lvr!==null&&lvr>.8?'warn':'neutral'],
+      ['Gross rental yield',metrics?fmtPct(metrics.grossYield||0,2):'—','Current scenario, year one','neutral']
+    ];
+    root.innerHTML=cards.map(x=>'<div class="portfolio-kpi '+x[3]+'"><div class="portfolio-kpi-label">'+escapeHtml(x[0])+'</div><div class="portfolio-kpi-value">'+escapeHtml(x[1])+'</div><div class="portfolio-kpi-note">'+escapeHtml(x[2])+'</div></div>').join('');
+    const context=$('#portfolio-snapshot-context'); if(context) context.textContent=inputs.scenarioName||'Unsaved draft';
+    const ranked=props.map((p,i)=>{const m=p.metrics||{},raw=inputs.properties&&inputs.properties[i]||{};return {label:raw.label||raw.address||('Property '+(i+1)),cash:Number(m.year1AfterTaxCashFlow||0),yield:m.grossYield};}).sort((x,y)=>y.cash-x.cash);
+    const performance=$('#portfolio-performance');
+    if(performance) performance.innerHTML=ranked.length?ranked.map((p,i)=>'<div class="performance-row"><span class="performance-rank">'+(i+1)+'</span><span class="performance-name">'+escapeHtml(p.label)+'</span><span class="performance-yield">'+(p.yield==null?'—':fmtPct(p.yield,2))+'</span><strong class="'+(p.cash>=0?'positive':'negative')+'">'+(p.cash>=0?'+':'−')+fmtMoney(Math.abs(p.cash))+'/yr</strong></div>').join(''):'<div class="empty-note">Add an investment property to see its performance here.</div>';
+    const alerts=$('#portfolio-alerts'), warnings=(result&&result.warnings||[]).slice(0,4);
+    if(alerts) alerts.innerHTML=warnings.length?warnings.map(w=>'<div class="portfolio-alert"><span class="alert-dot"></span><span>'+escapeHtml(w)+'</span></div>').join(''):'<div class="portfolio-clear"><span>✓</span><div><strong>No calculation warnings</strong><small>Review assumptions and lender/tax inputs before relying on projections.</small></div></div>';
+  }
+
   function renderDashboard(list) {
     const items = dash.items;
     const scored = items.filter((i) => i.score !== null && i.score !== undefined);
@@ -913,6 +941,7 @@
       },
       options: baseOpts((v) => fmtNum(v)),
     });
+    renderPortfolioSnapshot();
   }
 
   function wireDashboard() {
@@ -1277,6 +1306,7 @@
   function recalc() {
     try {
       state.result = E.calculateAll(state.inputs, { suburb: currentSuburb() });
+      updateInputGuide();
     } catch (err) {
       console.error('calculation failed', err);
       toast('Calculation error — check inputs');
@@ -1431,6 +1461,19 @@
       `<button class="prop-tab prop-tab-add" data-prop-add ${atCap ? 'disabled' : ''}>+ Add property</button>`;
   }
 
+
+  function updateInputGuide() {
+    const host=$('#input-guide'); if(!host||!state.inputs) return;
+    const props=state.inputs.properties||[], idx=Number.isInteger(state.inputTab)?state.inputTab:-1;
+    const data=idx>=0?(props[idx]||{}):state.inputs;
+    const fields=idx>=0?[['address','Property address'],['purchasePrice','Purchase price'],['weeklyRent','Weekly rent']]:[['state','Purchase state'],['projectionYears','Hold period'],['owner1TaxableIncome','Your taxable income']];
+    const done=v=>v!==''&&v!==null&&v!==undefined&&v!==0;
+    const count=fields.filter(x=>done(data[x[0]])).length, pct=Math.round(count/fields.length*100);
+    const active=state.inputTab==='portfolio'?'portfolio':state.inputTab==='ppor'?'ppor':'property';
+    host.innerHTML='<div class="input-guide-head"><div><div class="page-eyebrow">GUIDED SETUP</div><h2>Build your investment scenario</h2><p>Start with the essentials. Advanced assumptions stay available when you need them.</p></div><div class="guide-progress"><strong>'+pct+'%</strong><span>'+count+' of '+fields.length+' essentials set</span><i><b style="width:'+pct+'%"></b></i></div></div><div class="guide-steps"><button type="button" data-guide-step="portfolio" class="'+(active==='portfolio'?'active':'')+'"><span>01</span><strong>Portfolio</strong><small>Ownership, income &amp; hold period</small></button><button type="button" data-guide-step="ppor" class="'+(active==='ppor'?'active':'')+'"><span>02</span><strong>Home &amp; equity</strong><small>PPOR value and funding</small></button><button type="button" data-guide-step="property" class="'+(active==='property'?'active':'')+'"><span>03</span><strong>Investment property</strong><small>Address, price and rental income</small></button></div><div class="guide-checklist">'+fields.map(x=>'<span class="'+(done(data[x[0]])?'done':'')+'">'+(done(data[x[0]])?'✓':'○')+' '+x[1]+'</span>').join('')+'</div>';
+    host.querySelectorAll('[data-guide-step]').forEach(btn=>btn.addEventListener('click',()=>{const step=btn.dataset.guideStep;setActiveTab(step==='portfolio'?'portfolio':step==='ppor'?'ppor':0);}));
+  }
+
   function setActiveTab(tab) {
     state.inputTab = tab;
     const pageId = tab === 'portfolio' ? 'prop-page-portfolio'
@@ -1440,6 +1483,7 @@
       $('#ip-pane-title').textContent = ipLabel(state.inputs.properties[tab], tab);
     }
     buildPropTabs();
+    updateInputGuide();
     syncForm();       // rebind the per-property fields to the newly active IP
     renderWarnings(); // chips are transient DOM; re-anchor for the active tab
     if (propertySectionVisible()) renderProperty();
