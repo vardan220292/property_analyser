@@ -542,6 +542,60 @@
 
   // ------------------------------------------------------------------
   // Announcement strip + first-run tour
+
+  function renderAnalyticsInsight(id, items, note) {
+    const host = $('#' + id);
+    if (!host) return;
+    host.innerHTML = '<div class="analytics-insight-head"><div><span class="page-eyebrow">KEY TAKEAWAYS</span><strong>What this means</strong></div><span>' + escapeHtml(note || 'Based on current assumptions') + '</span></div><div class="analytics-insight-grid">' +
+      items.map(x => '<div class="analytics-takeaway ' + (x.tone || '') + '"><small>' + escapeHtml(x.label) + '</small><strong>' + escapeHtml(x.value) + '</strong><span>' + escapeHtml(x.detail || '') + '</span></div>').join('') + '</div>';
+  }
+
+  const QUICK_PAGES = [
+    ['overview','Dashboard','Portfolio overview'],['inputs','Investment inputs','Edit assumptions'],
+    ['property','Property intelligence','Map and property data'],['area','Area & suburb','Market research'],
+    ['cashflow','Cash flow','Income and expenses'],['projections','Projections','Long-term outlook'],
+    ['exit','Exit & CGT','Sale and capital gains'],['borrowing','Borrowing capacity','Serviceability'],
+    ['scenarios','Scenarios','Compare saved cases'],['actuals','Actuals','Actual performance'],['workspace','Client workspace','Buyer agent tools']
+  ];
+
+  function wireCommandPalette() {
+    const overlay=$('#command-palette'), input=$('#command-search-input'), results=$('#command-results');
+    if(!overlay||!input||!results)return;
+    let entries=[], active=0;
+    const close=()=>{overlay.classList.add('hidden');input.value='';};
+    const open=()=>{build('');overlay.classList.remove('hidden');input.focus();};
+    function build(query) {
+      const q=String(query||'').trim().toLowerCase();
+      entries=[];
+      QUICK_PAGES.forEach(p=>{if((p[1]+' '+p[2]).toLowerCase().includes(q))entries.push({type:'page',title:p[1],detail:p[2],target:p[0]});});
+      (state.scenarioList||[]).forEach(s=>{if((s.name||'').toLowerCase().includes(q))entries.push({type:'scenario',title:s.name,detail:'Saved scenario',id:s.id});});
+      (dash.items||[]).forEach(p=>{if((p.address+' '+p.suburb+' '+p.scenarioName).toLowerCase().includes(q))entries.push({type:'property',title:p.address,detail:[p.suburb,p.scenarioName].filter(Boolean).join(' · '),id:p.scenarioId,index:p.index});});
+      if(!q) entries=entries.slice(0,12);
+      active=0;
+      results.innerHTML=entries.length?entries.slice(0,18).map((e,i)=>'<button type="button" class="command-result '+(i===0?'active':'')+'" data-command-index="'+i+'"><span class="command-result-icon">'+(e.type==='page'?'↗':e.type==='scenario'?'▤':'⌂')+'</span><span><strong>'+escapeHtml(e.title)+'</strong><small>'+escapeHtml(e.detail)+'</small></span><kbd>'+(e.type==='page'?'PAGE':e.type==='scenario'?'SCENARIO':'PROPERTY')+'</kbd></button>').join(''):'<div class="command-empty">No matching pages, properties or scenarios.</div>';
+    }
+    function choose(i) {
+      const e=entries[i];if(!e)return;
+      close();
+      if(e.type==='page'){const a=document.querySelector('#nav a[data-target="'+e.target+'"]');if(a)a.click();}
+      else if(e.type==='scenario')loadScenario(e.id);
+      else loadScenario(e.id).then(()=>{if(Number.isInteger(e.index)){state.inputTab=e.index;setActiveTab(e.index);}const a=document.querySelector('#nav a[data-target="property"]');if(a)a.click();});
+    }
+    input.addEventListener('input',()=>build(input.value));
+    results.addEventListener('click',ev=>{const b=ev.target.closest('[data-command-index]');if(b)choose(Number(b.dataset.commandIndex));});
+    input.addEventListener('keydown',ev=>{
+      if(ev.key==='ArrowDown'||ev.key==='ArrowUp'){ev.preventDefault();active=(active+(ev.key==='ArrowDown'?1:-1)+Math.min(entries.length,18))%Math.min(entries.length,18);results.querySelectorAll('.command-result').forEach((b,i)=>b.classList.toggle('active',i===active));}
+      if(ev.key==='Enter'){ev.preventDefault();choose(active);}
+      if(ev.key==='Escape')close();
+    });
+    overlay.addEventListener('mousedown',ev=>{if(ev.target===overlay)close();});
+    document.addEventListener('keydown',ev=>{
+      if((ev.metaKey||ev.ctrlKey)&&ev.key.toLowerCase()==='k'){ev.preventDefault();overlay.classList.contains('hidden')?open():close();}
+      else if(ev.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&!ev.metaKey&&!ev.ctrlKey){ev.preventDefault();open();}
+      else if(ev.key==='Escape'&&!overlay.classList.contains('hidden'))close();
+    });
+  }
+
   // ------------------------------------------------------------------
 
   const ANNOUNCE_KEY = 'pa_announce_dismissed';
@@ -1715,6 +1769,13 @@
     sel.innerHTML = rows.map((r) => `<option value="${r.year}" ${r.year === keep ? 'selected' : ''}>Year ${r.year} (${r.calendarYear})</option>`).join('');
     state.cfYear = keep;
     const row = rows[keep - 1];
+
+    renderAnalyticsInsight('cf-insight',[
+      {label:'Effective rental income',value:fmtMoney(row.effectiveRent),detail:'After vacancy allowance'},
+      {label:'Net operating income',value:fmtMoney(row.netOperatingIncome),detail:'Before loan principal'},
+      {label:'After-tax cash flow',value:signed(row.afterTaxCashFlow),detail:'Year '+row.year+' · '+(row.afterTaxCashFlow>=0?'surplus':'cash contribution required'),tone:row.afterTaxCashFlow>=0?'good':'warn'},
+      {label:'Total debt service',value:fmtMoney(row.ipInterest+row.equityLoanInterest+row.ipPrincipalRepayment+row.equityLoanPrincipalRepayment),detail:'Interest plus principal'}
+    ],'Year '+row.year+' · '+row.calendarYear);
     const deductShare = state.result.inputs.equityLoanPurposePercent;
 
     $('#cf-subtitle').textContent =
@@ -1866,6 +1927,14 @@
     fillViewSelect($('#proj-prop'));
     const rows = viewData().rows;
     const ioEnd = rows.find((r) => !r.inInterestOnlyPeriod);
+
+    const first=rows[0], last=rows[rows.length-1];
+    renderAnalyticsInsight('proj-insight',[
+      {label:'Property value growth',value:fmtMoney(last.propertyValue-first.propertyValue),detail:'Projected change over '+rows.length+' years'},
+      {label:'Ending equity',value:fmtMoney(last.netEquity),detail:'Property value less debt',tone:last.netEquity>=0?'good':'warn'},
+      {label:'Debt reduction',value:fmtMoney(first.totalDebt-last.totalDebt),detail:'Change in total loan balance'},
+      {label:'Year-one cash flow',value:signed(first.afterTaxCashFlow),detail:'After tax',tone:first.afterTaxCashFlow>=0?'good':'warn'}
+    ],'Full holding period');
     $('#proj-table').innerHTML = `
       <thead><tr>
         <th>Yr</th><th>Value</th><th>Rent</th><th>NOI</th><th>Interest</th>
@@ -1924,6 +1993,13 @@
     fillViewSelect($('#exit-prop'));
     const x = view.exit;
     const profit = x.totalNetPosition;
+
+    renderAnalyticsInsight('exit-insight',[
+      {label:'Gross capital gain',value:fmtMoney(x.capitalGain),detail:'Before CGT discount'},
+      {label:'Estimated CGT',value:fmtMoney(x.capitalGainsTax),detail:'Based on entered marginal rate',tone:'warn'},
+      {label:'Net sale proceeds',value:fmtMoney(x.netSaleProceeds),detail:'After selling costs, CGT and loans'},
+      {label:'Total net position',value:fmtMoney(profit),detail:'Includes cumulative cash flow and initial cash',tone:profit>=0?'good':'warn'}
+    ],'Sale year '+x.saleYear);
     const sellingSub = view.propInputs
       ? `${fmtPct(view.propInputs.sellingCostRate, 1)} + fixed`
       : 'combined across properties';
@@ -1970,6 +2046,13 @@
 
   function renderBorrowing() {
     const b = state.result.borrowing;
+
+    renderAnalyticsInsight('borrowing-insight',[
+      {label:'Monthly surplus',value:fmtMoney(b.monthlySurplus),detail:'After assessed commitments',tone:b.monthlySurplus>=0?'good':'warn'},
+      {label:'Indicative new borrowing',value:fmtMoney(b.maxNewLoan),detail:'Modelled serviceability estimate',tone:b.maxNewLoan>0?'good':'warn'},
+      {label:'Debt-to-income',value:b.estimatedDTI?b.estimatedDTI.toFixed(1)+'x':'—',detail:'Compare with your warning threshold',tone:b.estimatedDTI>state.result.inputs.bcDtiWarn?'warn':'good'},
+      {label:'Assessment buffer',value:fmtPct(b.assessmentBuffer,1),detail:'Added to loan rates for assessment'}
+    ],'Indicative only · lender policy varies');
     $('#borrowing-cards').innerHTML =
       card('Assessable income', fmtMoney(b.assessableIncome), `rent shaded: ${fmtMoney(b.rentAssessed)}`) +
       card('Living expenses', fmtMoney(b.livingExpenses)) +
@@ -3302,6 +3385,7 @@
 
   function boot() {
     setupAppShell();
+    wireCommandPalette();
     bindInputs();
     bindMaskToggles();
     wireDashboard();
