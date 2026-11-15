@@ -1659,7 +1659,8 @@
     const coc = m.cashOnCashReturn === null
       ? 'n/a (fully geared)' : fmtPct(m.cashOnCashReturn, 1);
     const wop = m.weeklyOutOfPocket;
-    $('#overview-cards').innerHTML =
+    const legacyCards = $('#overview-cards');
+    if (legacyCards) legacyCards.innerHTML =
       card('Purchase price', fmtMoney(m.purchasePrice), `Duty ${fmtMoney(m.transferDuty)}${state.inputs.buyerType === 'foreign' ? ' incl. foreign surcharge' : ''}`) +
       card('Gross yield', fmtPct(m.grossYield), `Net ${fmtPct(m.netYield)}`) +
       card('Weekly out-of-pocket', fmtMoney(Math.max(0, wop)) + (wop < 0 ? ' in' : ''), 'after tax, year 1', wop > 0 ? 'bad' : 'good') +
