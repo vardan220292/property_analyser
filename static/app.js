@@ -564,6 +564,7 @@
     let entries=[], active=0;
     const close=()=>{overlay.classList.add('hidden');input.value='';};
     const open=()=>{build('');overlay.classList.remove('hidden');input.focus();};
+    const trigger=$('#command-open');if(trigger)trigger.addEventListener('click',open);
     function build(query) {
       const q=String(query||'').trim().toLowerCase();
       entries=[];
