@@ -1365,3 +1365,39 @@ body.sidebar-collapsed .app-sidebar #nav .nav-group[open] .nav-menu {
 #section-inputs details.advanced[open]>summary{border-bottom:1px solid var(--bd)}
 #section-inputs details.advanced>.grid-form{padding:.95rem}
 @media(max-width:760px){.portfolio-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.portfolio-insight-grid{grid-template-columns:1fr}.performance-row{grid-template-columns:1.5rem minmax(0,1fr) 3.2rem}.performance-row strong{grid-column:2/-1;text-align:left}.input-guide-head{flex-direction:column}.guide-progress{width:100%;text-align:left}.guide-steps{grid-template-columns:1fr}}
+
+
+/* Milestone 13 — analytics interpretation layer */
+.analytics-insight{margin:.9rem 0 1.1rem;padding:1rem 1.1rem;border:1px solid var(--dash-line);border-radius:.9rem;background:var(--card)}
+.analytics-insight:empty{display:none}
+.analytics-insight-head{display:flex;justify-content:space-between;align-items:center;gap:.8rem;margin-bottom:.75rem}
+.analytics-insight-head>div{display:flex;flex-direction:column;gap:.12rem}
+.analytics-insight-head strong{font-size:.88rem;letter-spacing:-.02em}
+.analytics-insight-head>span{color:var(--muted);font-size:.67rem;text-align:right}
+.analytics-insight-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.6rem}
+.analytics-takeaway{display:flex;flex-direction:column;gap:.22rem;min-width:0;padding:.75rem;border:1px solid var(--bd);border-radius:.7rem;background:var(--bg)}
+.analytics-takeaway small{color:var(--muted);font-size:.66rem;font-weight:650}
+.analytics-takeaway strong{font-size:clamp(.92rem,1.5vw,1.2rem);letter-spacing:-.035em;overflow-wrap:anywhere}
+.analytics-takeaway>span{color:var(--muted);font-size:.63rem;line-height:1.35}
+.analytics-takeaway.good strong{color:var(--good)}
+.analytics-takeaway.warn strong{color:var(--amber)}
+.analytics-takeaway.bad strong{color:var(--bad)}
+
+/* Milestone 14 — global command palette */
+.command-palette{position:fixed;inset:0;z-index:1200;display:flex;align-items:flex-start;justify-content:center;padding: min(15vh,8rem) 1rem 1rem;background:rgba(15,23,42,.48);backdrop-filter:blur(5px)}
+.command-palette.hidden{display:none}
+.command-panel{width:min(620px,100%);max-height:min(70vh,620px);overflow:hidden;border:1px solid var(--bd);border-radius:1rem;background:var(--card);box-shadow:0 24px 80px rgba(15,23,42,.25)}
+.command-search{display:flex;align-items:center;gap:.8rem;padding:.95rem 1rem;border-bottom:1px solid var(--bd)}
+.command-search>span{font-size:1.3rem;color:var(--muted)}
+.command-search input{flex:1;min-width:0;border:0!important;outline:0!important;background:transparent!important;color:var(--txt);font-size:.95rem}
+.command-search kbd,.command-footer kbd,.command-result kbd{padding:.18rem .38rem;border:1px solid var(--bd);border-radius:.35rem;color:var(--muted);font-size:.6rem}
+.command-results{max-height:52vh;overflow:auto;padding:.45rem}
+.command-result{display:flex;width:100%;align-items:center;gap:.75rem;padding:.7rem;border:0;border-radius:.6rem;background:transparent;color:var(--txt);text-align:left;cursor:pointer}
+.command-result:hover,.command-result.active{background:var(--pri-soft)}
+.command-result-icon{display:grid;place-items:center;width:1.9rem;height:1.9rem;flex:0 0 1.9rem;border-radius:.55rem;background:var(--bg);color:var(--pri);font-size:1rem}
+.command-result>span:nth-child(2){display:flex;flex:1;min-width:0;flex-direction:column;gap:.1rem}
+.command-result strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem}
+.command-result small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.66rem}
+.command-empty{padding:1.5rem;text-align:center;color:var(--muted);font-size:.78rem}
+.command-footer{display:flex;justify-content:space-between;gap:.5rem;padding:.65rem .9rem;border-top:1px solid var(--bd);color:var(--muted);font-size:.62rem}
+@media(max-width:760px){.analytics-insight-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.analytics-insight-head{align-items:flex-start;flex-direction:column}.analytics-insight-head>span{text-align:left}.command-footer span:last-child{display:none}}
