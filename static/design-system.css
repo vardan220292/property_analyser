@@ -1401,3 +1401,5 @@ body.sidebar-collapsed .app-sidebar #nav .nav-group[open] .nav-menu {
 .command-empty{padding:1.5rem;text-align:center;color:var(--muted);font-size:.78rem}
 .command-footer{display:flex;justify-content:space-between;gap:.5rem;padding:.65rem .9rem;border-top:1px solid var(--bd);color:var(--muted);font-size:.62rem}
 @media(max-width:760px){.analytics-insight-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.analytics-insight-head{align-items:flex-start;flex-direction:column}.analytics-insight-head>span{text-align:left}.command-footer span:last-child{display:none}}
+
+.command-open{display:inline-flex;align-items:center;gap:.45rem;padding:.45rem .65rem;font-size:.7rem}.command-open kbd{padding:.12rem .3rem;border:1px solid var(--bd);border-radius:.3rem;color:var(--muted);font-size:.58rem}@media(max-width:900px){.command-open span,.command-open kbd{display:none}}
