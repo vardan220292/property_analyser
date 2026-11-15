@@ -116,6 +116,15 @@
 
         <div class="stat-grid" id="dash-stats"></div>
 
+        <div class="portfolio-snapshot section">
+          <div class="section-head-row"><div><div class="dash-eyebrow">PORTFOLIO HEALTH</div><h2>At a glance</h2><div class="hint">Live figures from the currently loaded scenario and its projection.</div></div><span class="snapshot-context" id="portfolio-snapshot-context">Current scenario</span></div>
+          <div class="portfolio-kpi-grid" id="portfolio-kpis"></div>
+          <div class="portfolio-insight-grid">
+            <div class="portfolio-insight"><div class="insight-heading"><h3>Property performance</h3><span class="hint">Year-one after-tax cash flow</span></div><div id="portfolio-performance" class="portfolio-performance"></div></div>
+            <div class="portfolio-insight"><div class="insight-heading"><h3>Scenario checks</h3><span class="hint">Calculation warnings to review</span></div><div id="portfolio-alerts" class="portfolio-alerts"></div></div>
+          </div>
+        </div>
+
         <div class="dash-row">
           <div class="section dashboard-panel">
             <h2>Recent activity</h2>
@@ -186,6 +195,7 @@
       <!-- ==================== INPUTS ==================== -->
       <section id="section-inputs" class="section-page">
         <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">INVESTMENT WORKSPACE</div><h1 class="page-title">Investment assumptions</h1><div class="page-description">Build and refine your property scenario. Portfolio settings, property-specific assumptions and advanced controls remain available below.</div></div></div>
+        <div id="input-guide" class="input-guide" aria-label="Investment setup progress"></div>
         <div id="prop-tabs" class="prop-tabs"></div>
 
         <!-- Portfolio pane: settings shared across the whole portfolio -->
