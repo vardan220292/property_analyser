@@ -1,0 +1,144 @@
+# Property Analyser — UI Modernisation Plan
+
+**Status:** Milestone 1 in progress  
+**Product direction:** Premium, trustworthy Australian property-investment analysis  
+**Implementation constraint:** Preserve the existing Flask + vanilla JavaScript stack and all financial behaviour.
+
+## Goals
+
+- Make the product feel like a polished, premium fintech application.
+- Reduce navigation complexity without removing existing capabilities.
+- Improve readability of financial information, data hierarchy and decision-making flows.
+- Make the main analyser, client portal and public landing page feel like one product.
+- Keep the interface responsive, accessible and usable in both light and dark themes.
+
+## Design direction
+
+- Calm, professional light interface by default; retain a carefully tuned dark theme.
+- Deep navy/ink for primary text and structure, restrained blue for primary actions, green for positive outcomes and red for negative outcomes.
+- Soft neutral page backgrounds, white/near-white surfaces, subtle borders and restrained shadows.
+- Consistent spacing, typography, radii, control heights, focus rings and motion.
+- Prefer clarity and information density over decorative gradients, excessive colour or animation.
+- Use the existing theme and text-scale preferences; do not remove either.
+
+## Proposed information architecture
+
+Consolidate the current destinations into these primary areas while preserving every feature:
+
+1. **Dashboard** — portfolio summary, recent activity, properties and key performance charts.
+2. **Properties** — property library and individual property details.
+3. **Investment Analysis** — guided inputs and purchase/finance assumptions.
+4. **Financial Analytics** — cash flow, projections, exit/CGT, borrowing capacity and actuals.
+5. **Market Intelligence** — suburb/area reports, property intelligence, maps and comparable sales.
+6. **Scenarios** — saved scenarios, duplication and side-by-side comparison.
+7. **Client Workspace** — BA workspace, client proposals and shareable portal.
+8. **Reports** — printable and downloadable analysis outputs.
+9. **Settings / Profile** — preferences, account and branding where applicable.
+
+Navigation consolidation is a UX proposal, not permission to remove or silently hide existing functionality.
+
+## Experience workstreams
+
+### Dashboard
+- Establish a clear page heading and context.
+- Prioritise portfolio value, equity, rental income, cash flow, debt/LVR, property count and gross yield.
+- Improve property summaries, recent activity and score distribution.
+- Give charts consistent legends, labels, empty states and responsive behaviour.
+
+### Properties and investment analysis
+- Create a searchable property library with useful statuses and quick actions.
+- Organise property details into overview, purchase, finance, rental, intelligence, area and performance.
+- Turn the current long input experience into a guided sequence with grouped fields, plain-language explanations and validation.
+- Provide a persistent summary of key assumptions and calculated outcomes.
+- Retain advanced controls for users who need them.
+
+### Financial analytics
+- Bring cash flow, projections, exit/CGT, borrowing capacity and actuals into one coherent analytics area.
+- Support clear time-period and property/portfolio context.
+- Distinguish assumptions, forecast results and actual performance.
+- Make tax, debt, equity and cash-flow effects easier to interpret.
+
+### Market intelligence
+- Improve suburb snapshots, investment-score explanations and comparable-sales review.
+- Make source attribution and data-as-of dates prominent.
+- Present parcel, land-use, planning, flood-study and bushfire map information clearly, with caveats intact.
+- Preserve the existing Queensland open-data integrations and Leaflet map behaviour.
+
+### Scenarios and reporting
+- Improve scenario discovery, naming, duplication, archiving and comparison.
+- Keep comparison metrics consistent across purchase cost, funding, rent, cash flow, tax, equity and exit proceeds.
+- Provide report entry points for property analysis, cash flow, projections, purchase costs, funding, area reports, comparisons and client proposals.
+- Preserve current scenario persistence and PDF/report workflows.
+
+### Client experience
+- Align the client portal visual language with the main analyser.
+- Improve proposal readability, assumptions, interactive adjustments, questions and decision actions.
+- Preserve authentication, share-token, OTP and access-control behaviour.
+- Retain BA branding and client-facing PDF output.
+
+## Technical approach and guardrails
+
+- Keep Flask, existing APIs, SQLite and vanilla JavaScript. No framework migration.
+- Keep `static/engine.js` as the calculation source of truth.
+- Treat financial formulas, tax assumptions, API contracts, persisted scenario shapes and authentication as protected.
+- Make visual changes incrementally and keep each milestone reviewable.
+- Prefer small CSS/JS modules only when they reduce coupling; avoid a wholesale rewrite.
+- Preserve existing light/dark and text-scale preferences.
+
+## Milestones
+
+### 1. Design foundation
+- Establish shared design tokens for colour, typography, spacing, radii, shadows and focus states.
+- Harmonise base surfaces, buttons, fields, tables and navigation chrome.
+- Improve keyboard focus, reduced-motion handling and responsive foundations.
+- Apply the shared foundation to the analyser and client portal.
+- Do not change calculations or navigation structure in this milestone.
+
+### 2. Dashboard redesign
+- Improve dashboard hierarchy, KPI cards, property cards, activity and chart presentation.
+- Preserve all existing dashboard metrics and data.
+
+### 3. Properties and investment analysis
+- Improve property discovery and property-detail organisation.
+- Refine the input workflow while retaining every existing input and advanced setting.
+
+### 4. Financial analytics
+- Harmonise cash flow, projections, exit/CGT, borrowing and actuals views.
+
+### 5. Market intelligence
+- Improve area reports, comparable sales and property intelligence/map presentation.
+
+### 6. Scenarios and reports
+- Improve scenario management/comparison and report discovery/output UX.
+
+### 7. Client experience
+- Modernise the BA workspace, client portal and proposal presentation.
+
+### 8. Polish and release
+- Responsive and accessibility pass, cross-browser checks, performance review and regression testing.
+
+## Milestone 1 acceptance criteria
+
+- Shared visual tokens are centralised and consistently applied.
+- Existing theme and text-size preferences continue to work.
+- Main analyser and client portal use the same foundational design language.
+- Interactive controls have visible keyboard focus and clear hover/disabled states.
+- Reduced-motion preferences are respected.
+- Layout remains usable on desktop, tablet and mobile.
+- No financial formulas, APIs, data structures, authentication or scenario behaviour are changed.
+- Existing engine regression tests pass.
+
+## Verification strategy
+
+- Run the existing Node engine regression suite after each relevant change.
+- Smoke-test login, navigation, scenario save/load, inputs, charts, property maps, actuals, portal access and PDF/print.
+- Check light and dark themes at desktop, tablet and mobile widths.
+- Check keyboard navigation, visible focus, reduced motion and browser console errors.
+- Do not merge a milestone with broken financial calculations, lost data or weakened access controls.
+
+## Explicit non-goals
+
+- No migration to React, Vue or another frontend framework.
+- No rewrite of the financial engine.
+- No change to tax/legal assumptions as part of visual modernisation.
+- No removal of existing features to simplify the interface.
