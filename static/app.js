@@ -480,6 +480,50 @@
     actuals: 'Actuals', scenarios: 'Scenarios', workspace: 'Workspace',
   };
 
+  // Responsive collapsible application navigation.
+  function setupAppShell() {
+    const navbar = $('.navbar'), nav = $('#nav');
+    if (!navbar || !nav || $('#app-sidebar')) return;
+    const sidebar = document.createElement('aside');
+    sidebar.id = 'app-sidebar';
+    sidebar.className = 'app-sidebar';
+    sidebar.setAttribute('aria-label', 'Application navigation');
+    sidebar.innerHTML = '<div class="sidebar-heading"><span class="sidebar-heading-label">WORKSPACE</span><span class="sidebar-heading-rule"></span></div><div class="sidebar-nav"></div><div class="sidebar-footer"><span class="sidebar-footer-mark">PA</span><span class="sidebar-footer-copy"><strong>Property Analyser</strong><small>Investment workspace</small></span></div>';
+    sidebar.querySelector('.sidebar-nav').appendChild(nav);
+    navbar.insertAdjacentElement('afterend', sidebar);
+    const backdrop = document.createElement('button');
+    backdrop.type = 'button'; backdrop.id = 'sidebar-backdrop'; backdrop.className = 'sidebar-backdrop';
+    backdrop.setAttribute('aria-label', 'Close navigation');
+    sidebar.insertAdjacentElement('afterend', backdrop);
+    const toggle = $('#sidebar-toggle'), prefKey = 'pa_sidebar_collapsed';
+    const isMobile = () => window.matchMedia('(max-width: 760px)').matches;
+    let collapsed = false;
+    try { collapsed = localStorage.getItem(prefKey) === '1'; } catch (e) {}
+    const apply = () => {
+      document.body.classList.toggle('sidebar-collapsed', collapsed && !isMobile());
+      document.body.classList.toggle('sidebar-open', isMobile() && !collapsed);
+      if (toggle) {
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+        toggle.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+        toggle.title = collapsed ? 'Expand navigation' : 'Collapse navigation';
+      }
+    };
+    const closeMobile = () => {
+      if (!isMobile()) return;
+      collapsed = true; document.body.classList.remove('sidebar-open'); apply();
+    };
+    if (toggle) toggle.addEventListener('click', () => {
+      collapsed = !collapsed;
+      try { localStorage.setItem(prefKey, collapsed ? '1' : '0'); } catch (e) {}
+      apply();
+    });
+    backdrop.addEventListener('click', closeMobile);
+    nav.addEventListener('click', ev => { if (ev.target.closest('a[data-target]')) closeMobile(); });
+    window.addEventListener('resize', apply);
+    if (isMobile()) collapsed = true;
+    apply();
+  }
+
   $('#nav').addEventListener('click', (ev) => {
     const a = ev.target.closest('a[data-target]');
     if (!a) return;
@@ -3213,6 +3257,7 @@
   // ------------------------------------------------------------------
 
   function boot() {
+    setupAppShell();
     bindInputs();
     bindMaskToggles();
     wireDashboard();
