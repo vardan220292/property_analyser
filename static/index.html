@@ -641,7 +641,8 @@
         <div class="section">
           <h2>Year detail <select id="cf-prop" style="margin-left:8px"></select> <select id="cf-year" style="margin-left:8px"></select></h2>
           <div class="hint" id="cf-subtitle"></div>
-          <div class="table-wrap"><table id="cf-table"></table></div>
+<div class="analytics-insight" id="cf-insight"></div>
+                  <div class="table-wrap"><table id="cf-table"></table></div>
           <div class="source-note">Per-property views allocate portfolio-level tax and land tax pro-rata — the Portfolio view shows the true assessed totals.</div>
         </div>
 
@@ -664,7 +665,8 @@
         <div class="section">
           <h2>Year-by-year projection <select id="proj-prop" style="margin-left:8px"></select></h2>
           <div class="hint">Highlighted row = interest-only period ends and P&amp;I repayments begin.</div>
-          <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table id="proj-table"></table></div>
+<div class="analytics-insight" id="proj-insight"></div>
+                  <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table id="proj-table"></table></div>
         </div>
         <div class="chart-row">
           <div class="section">
@@ -684,7 +686,8 @@
         <div class="section">
           <h2>Sale <select id="exit-prop" style="margin-left:8px"></select></h2>
           <div id="exit-cards" class="cards"></div>
-        </div>
+<div class="analytics-insight" id="exit-insight"></div>
+                </div>
 
         <div class="section">
           <h2>Sale waterfall</h2>
@@ -724,7 +727,8 @@
           </div>
         </div>
         <div id="borrowing-cards" class="cards"></div>
-        <div class="section">
+<div class="analytics-insight" id="borrowing-insight"></div>
+                <div class="section">
           <h2>Rate sensitivity</h2>
           <div class="hint">Max additional borrowing as interest rates move (buffer always applied on top).</div>
           <div class="chart-box"><canvas id="chart-bc-sens"></canvas></div>
@@ -860,6 +864,14 @@
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <div id="command-palette" class="command-palette hidden" role="dialog" aria-modal="true" aria-label="Search and quick actions">
+    <div class="command-panel">
+      <div class="command-search"><span>⌕</span><input id="command-search-input" type="search" autocomplete="off" placeholder="Search pages, properties and scenarios…"><kbd>ESC</kbd></div>
+      <div class="command-results" id="command-results"></div>
+      <div class="command-footer"><span>↑ ↓ to navigate</span><span><kbd>↵</kbd> to open</span><span><kbd>⌘ K</kbd> quick search</span></div>
+    </div>
+  </div>
 
   <!-- First-run coach marks -->
   <div id="tour" class="tour hidden" data-step="0">
