@@ -1,0 +1,44 @@
+{
+  "bankRates": [
+    {
+      "bankName": "CBA",
+      "productName": "Standard Variable Investment (new lending, <=60% LVR)",
+      "investorIoRate": 0.068,
+      "investorPiRate": 0.0654,
+      "source": "CommBroker investment rate sheet (ref SVR 9.38 P&I / 9.64 IO); commbank.com.au page is dynamic",
+      "checkedAt": "2026-11"
+    },
+    {
+      "bankName": "Westpac",
+      "productName": "Flexi First Option Investment (LVR <=70%, discount-offered)",
+      "investorIoRate": 0.0749,
+      "investorPiRate": 0.0699,
+      "source": "westpac.com.au all-interest-rates, effective 2026-11-13 (post-RBA); online offer 6.39 PI / 6.64 IO",
+      "checkedAt": "2026-11"
+    },
+    {
+      "bankName": "NAB",
+      "productName": "Tailored Home Loan - Residential Investor ('from' rates, <=60% LVR)",
+      "investorIoRate": 0.0665,
+      "investorPiRate": 0.0645,
+      "source": "nab.com.au home-loan-interest-rates as at 2026-11-09 (Base Variable investor: 7.21 PI / 7.92 IO)",
+      "checkedAt": "2026-11"
+    },
+    {
+      "bankName": "ANZ",
+      "productName": "Simplicity PLUS Residential Investment ('from' rates, <=60% LVR)",
+      "investorIoRate": 0.0729,
+      "investorPiRate": 0.0689,
+      "source": "anz.com.au interest-rates (Standard Variable investment: 8.09 PI / 8.34 IO); +0.25% announced effective 2026-11-13",
+      "checkedAt": "2026-11"
+    },
+    {
+      "bankName": "Macquarie",
+      "productName": "Basic Home Loan - Investment (<=60% LVR, no IO premium)",
+      "investorIoRate": 0.0639,
+      "investorPiRate": 0.0639,
+      "source": "macquarie.com.au home-loan-rates (offset version 6.59); +0.25% effective 2026-11-19 after the 2026-11-03 RBA move",
+      "checkedAt": "2026-11"
+    }
+  ]
+}

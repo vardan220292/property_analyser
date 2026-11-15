@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2026 RV - Public landing page (/welcome). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Property Analyser — investment proposals your clients can interrogate</title>
+<style>
+  :root { --pri: #6366f1; --pri-2: #8b5cf6; --ink: #0f172a; --muted: #475569; --bd: #e2e8f0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Helvetica Neue', Arial, sans-serif; color: var(--ink); line-height: 1.55; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 18px 0; }
+  .logo { font-weight: 900; font-size: 18px; color: var(--pri); }
+  nav a { margin-left: 14px; text-decoration: none; font-weight: 600; font-size: 14px; }
+  nav a.btn { background: var(--pri); color: #fff; padding: 9px 18px; border-radius: 8px; }
+  nav a.ghost { color: var(--muted); }
+  .hero { background: linear-gradient(135deg, #101631, #1e1b4b); color: #fff;
+          border-radius: 18px; padding: 56px 44px; margin: 12px 0 40px; }
+  .hero h1 { font-size: 34px; margin: 0 0 14px; line-height: 1.2; }
+  .hero p { font-size: 17px; color: #cbd5e1; max-width: 620px; margin: 0 0 26px; }
+  .hero a.cta { display: inline-block; background: linear-gradient(135deg, var(--pri), var(--pri-2));
+          color: #fff; text-decoration: none; font-weight: 700; padding: 13px 26px; border-radius: 10px; }
+  .hero .note { display: block; margin-top: 12px; font-size: 12px; color: #94a3b8; }
+  h2 { font-size: 24px; margin: 48px 0 8px; }
+  .lead { color: var(--muted); margin: 0 0 22px; }
+  .three { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .card { border: 1px solid var(--bd); border-radius: 14px; padding: 20px 22px; }
+  .card h3 { margin: 0 0 8px; font-size: 16px; }
+  .card p { margin: 0; font-size: 14px; color: var(--muted); }
+  .diff { background: #f5f7ff; border-radius: 14px; padding: 28px 30px; margin: 36px 0; }
+  .diff strong { color: var(--pri); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 6px; font-size: 14px; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--bd); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .price { font-size: 22px; font-weight: 800; color: var(--pri); }
+  .disclaimer { color: #94a3b8; font-size: 12px; }
+  footer { margin: 48px 0 24px; color: #94a3b8; font-size: 13px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">Property Analyser</div>
+      <nav>
+        <a class="ghost" href="#pricing">Pricing</a>
+        <a class="btn" href="/">Sign in / Create account</a>
+      </nav>
+    </header>
+
+    <div class="hero">
+      <h1>Property proposals your clients can interrogate — not just admire.</h1>
+      <p>Most property presentations are built to convince someone to buy.
+         Ours is built to help them work out whether buying is actually a
+         good financial decision: full cash-flow, tax and duty modelling,
+         and a private link where the client changes the assumptions
+         themselves.</p>
+      <a class="cta" href="/">Start analysing</a>
+      <span class="note">Runs the entire calculation engine in your browser — figures update as you type.</span>
+    </div>
+
+    <h2>One tool, three audiences</h2>
+    <p class="lead">Buyer's agents present. Investors analyse. Clients explore the numbers on their own terms.</p>
+    <div class="three">
+      <div class="card"><h3>For buyer's agents</h3>
+        <p>Save a scenario, add a client, share a branded link. The proposal
+           snapshots what you shared; keep editing freely afterwards. See
+           every client action — viewed, commented, approved — in one place.</p></div>
+      <div class="card"><h3>For investors</h3>
+        <p>Acquisition costs and duty, LMI, IO/P&amp;I loans, negative
+           gearing, depreciation, land tax, borrowing capacity, exit and
+           CGT — across a whole portfolio, in every Australian state.</p></div>
+      <div class="card"><h3>For clients</h3>
+        <p>Open the link — no password. Drag the price, rent, rate and
+           growth sliders and watch the investment behave. Save your own
+           numbers, ask questions, and approve or request changes.</p></div>
+    </div>
+
+    <div class="diff">
+      <h2 style="margin-top:0">The differentiation</h2>
+      <p style="margin:0">The industry sells conviction. We sell
+        <strong>verification</strong>. When a client can move the interest
+        rate themselves and watch the annual shortfall change, the
+        conversation stops being a pitch and becomes a decision. That is
+        the product.</p>
+    </div>
+
+    <h2 id="pricing">Pricing</h2>
+    <p class="lead">Proposed pricing — not yet validated market pricing.</p>
+    <table>
+      <thead><tr><th>Plan</th><th>Price</th><th>For</th></tr></thead>
+      <tbody>
+        <tr><td>Investor</td><td class="price">Free</td><td>Personal analysis — unlimited scenarios</td></tr>
+        <tr><td>Trial (BAs)</td><td class="price">Free</td><td>3 active client proposals</td></tr>
+        <tr><td>Professional</td><td class="price">$149/mo</td><td>Solo buyer's agents — unlimited proposals, branding</td></tr>
+        <tr><td>Agency</td><td class="price">$299/mo</td><td>Small BA teams</td></tr>
+      </tbody>
+    </table>
+    <p class="disclaimer">Estimates produced by this tool are illustrative models of stated assumptions —
+      not financial or tax advice. State duties and land tax verified against official revenue offices; confirm
+      decisions with a registered tax adviser.</p>
+
+    <footer>© 2026 Property Analyser · Australia-wide · <a href="/">Sign in</a></footer>
+  </div>
+</body>
+</html>

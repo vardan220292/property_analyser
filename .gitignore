@@ -1,0 +1,21 @@
+# Secrets — never commit
+.env
+data/.jwt_secret
+
+# Local databases (SQLite) — never commit
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node (playwright verification scratch)
+node_modules/
+package-lock.json
+package.json
+
+# OS noise
+.DS_Store

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2026 RV - Client portal shell. Deep link /p/<token>
+     auto-resolves + logs the client in; /portal is the returning-client
+     home (OTP login + shared-property list). Shares styles.css and the
+     calculation engine with the main app; deliberately NOT app.js. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Property proposal</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <script>
+    // Anti-flash theme bootstrap (same key as the main app)
+    try {
+      var ui = JSON.parse(localStorage.getItem('pa_ui') || '{}');
+      if (ui.theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      if (ui.scale) document.documentElement.style.setProperty('--ui-scale', ui.scale);
+    } catch (e) {}
+  </script>
+</head>
+<body class="portal">
+  <header class="portal-head">
+    <div class="portal-brand">
+      <span class="portal-logo">PA</span>
+      <div>
+        <div id="portal-ba" class="portal-ba">Property Analyser</div>
+        <div id="portal-tagline" class="portal-tagline hidden"></div>
+        <div class="portal-sub" id="portal-client"></div>
+      </div>
+    </div>
+    <button id="p-print" class="btn-ghost portal-print hidden">Save as PDF</button>
+    <button id="portal-logout" class="btn-ghost hidden">Sign out</button>
+  </header>
+
+  <main class="portal-main">
+    <!-- Returning-client home: OTP + list -->
+    <div id="portal-home" class="section hidden">
+      <h2>Your shared properties</h2>
+      <div id="portal-list" class="portal-list"></div>
+      <div id="otp-form" class="otp-form hidden">
+        <h2>Sign in</h2>
+        <div class="hint">Enter your email — we'll send a one-time code. Use the link your agent sent you to jump straight in.</div>
+        <div class="grid-form">
+          <div class="field"><label>Email</label><input type="email" id="otp-email" autocomplete="email" placeholder="you@example.com"></div>
+        </div>
+        <div class="grid-form hidden" id="otp-code-row">
+          <div class="field"><label>6-digit code</label><input type="text" id="otp-code" autocomplete="one-time-code" inputmode="numeric" maxlength="6" placeholder="••••••"></div>
+        </div>
+        <button id="otp-send" class="primary">Send code</button>
+        <div id="otp-msg" class="source-note"></div>
+      </div>
+    </div>
+
+    <!-- The presentation -->
+    <div id="portal-view" class="hidden">
+      <div class="portal-title-row">
+        <h1 id="p-title">Property proposal</h1>
+        <span id="p-adjusted" class="badge hidden">using my numbers</span>
+      </div>
+
+      <section class="section" id="p-property-sec">
+        <h2>About the property</h2>
+        <div class="hint" id="p-property-sub">Live Queensland Government data for the property — parcel, planning and flood context.</div>
+        <div id="p-property-map"></div>
+        <div id="p-property-cards" class="cards"></div>
+        <div id="p-property-sources" class="source-note"></div>
+      </section>
+
+      <div id="p-cards" class="cards"></div>
+
+      <section class="section" id="p-slider-sec">
+        <h2>Change the numbers</h2>
+        <div class="hint">Drag to see how the investment behaves. Nothing is shared until you press Save.</div>
+        <div class="grid-form" id="p-sliders"></div>
+        <div class="portal-actions">
+          <button id="p-reset" class="btn-ghost">Reset to agent's numbers</button>
+          <button id="p-save" class="primary">Save my numbers</button>
+          <span id="p-save-msg" class="source-note"></span>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Cash flow — first year</h2>
+        <div class="hint" id="p-cf-sub"></div>
+        <div class="table-wrap"><table id="p-table"></table></div>
+      </section>
+
+      <section class="section" id="p-questions-sec">
+        <h2>Questions &amp; decision</h2>
+        <div id="p-comments"></div>
+        <div class="grid-form">
+          <div class="field"><label>Leave a comment</label>
+            <input type="text" id="p-comment" autocomplete="off" placeholder="Ask a question or note a concern" maxlength="2000"></div>
+        </div>
+        <div class="portal-actions">
+          <button id="p-approve" class="primary">Approve proposal</button>
+          <button id="p-changes" class="btn-ghost">Request changes</button>
+          <span id="p-decision-msg" class="source-note"></span>
+        </div>
+      </section>
+
+      <div class="source-note">Estimates only, not financial or tax advice. Prepared with your agent's assumptions; figures update instantly as you change the numbers.</div>
+    </div>
+
+    <!-- Dead / unknown link -->
+    <div id="portal-closed" class="section hidden">
+      <h2>This link isn't active</h2>
+      <div class="hint" id="portal-closed-msg">The share link has been revoked, expired, or was mistyped. Ask your agent for a fresh link.</div>
+    </div>
+  </main>
+
+  <!-- Vendored locally in static/vendor/leaflet (no CDN) -->
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/engine.js"></script>
+  <script src="/portal.js"></script>
+</body>
+</html>

@@ -1,0 +1,859 @@
+<!doctype html>
+<!-- Copyright (c) 2026 RV -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Property Analyser — QLD Investment Property</title>
+  <script>
+    /* Apply saved theme/scale before first paint to avoid a flash. */
+    try {
+      var p = JSON.parse(localStorage.getItem('pa_ui') || '{}');
+      document.documentElement.dataset.theme = p.theme === 'dark' ? 'dark' : 'light';
+      if ([0.85, 1, 1.15, 1.3].indexOf(p.scale) >= 0) {
+        document.documentElement.style.setProperty('--ui-scale', String(p.scale));
+      }
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+</head>
+<body>
+  <div class="layout">
+    <header class="navbar">
+      <a class="navbar-brand" href="/">
+        <span class="brand-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12.5 12 4l9 8.5"/><path d="M6 11v8h12v-8"/><path d="M10 19v-4h4v4"/>
+          </svg>
+        </span>
+        <span class="brand-text">Property<b>Analyser</b></span>
+      </a>
+
+      <nav id="nav">
+        <a data-target="overview" class="active">Dashboard</a>
+        <a data-target="inputs">Inputs</a>
+        <a data-target="property">Property</a>
+        <a data-target="area">Area</a>
+        <a data-target="cashflow">Cash Flow</a>
+        <a data-target="projections">Projections</a>
+        <a data-target="exit">Exit</a>
+        <a data-target="borrowing">Borrowing</a>
+        <a data-target="actuals">Actuals</a>
+        <a data-target="scenarios">Scenarios</a>
+        <a data-target="workspace" id="nav-workspace" class="hidden">Workspace</a>
+      </nav>
+
+      <div class="navbar-right">
+        <div class="ui-controls" title="Text size and theme">
+          <button id="btn-scale-down" class="icon-btn" title="Smaller text">A&minus;</button>
+          <span id="scale-label" class="scale-label">100%</span>
+          <button id="btn-scale-up" class="icon-btn" title="Larger text">A+</button>
+          <button id="btn-theme" class="icon-btn" title="Switch light / dark theme">
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+        </div>
+        <span id="user-avatar" class="avatar hidden">?</span>
+        <span id="user-chip" class="user-name hidden"></span>
+        <button id="btn-logout" class="btn-ghost hidden">Sign out</button>
+      </div>
+    </header>
+
+    <div class="subbar">
+      <h1 id="page-title">Dashboard</h1>
+      <div class="topbar-actions">
+        <select id="scenario-select"><option value="">— unsaved draft —</option></select>
+        <input type="text" autocomplete="off" id="scenario-name" class="scenario-name" placeholder="Scenario name" data-field="scenarioName">
+        <button id="btn-save" class="primary">Save</button>
+        <button id="btn-save-as">Save as new</button>
+        <button id="btn-reset">Reset</button>
+      </div>
+    </div>
+
+    <div id="announce" class="announce hidden">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <span id="announce-text">Live Queensland property data is in the <b>Property</b> tab — free government data for every address.</span>
+      <button id="announce-close" class="icon-btn" title="Dismiss">&times;</button>
+    </div>
+
+    <main class="main">
+      <div id="warnings" class="warnings hidden"></div>
+
+      <!-- ==================== DASHBOARD ==================== -->
+      <section id="section-overview" class="section-page active">
+        <div class="dash-head">
+          <div>
+            <h1 class="dash-title">Dashboard</h1>
+            <div class="dash-sub">Welcome back, <span id="dash-user">there</span> — here's where your property research stands.</div>
+          </div>
+          <button id="dash-refresh" class="icon-btn lg" title="Refresh dashboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+          </button>
+        </div>
+
+        <div class="stat-grid" id="dash-stats"></div>
+
+        <div class="dash-row">
+          <div class="section">
+            <h2>Recent activity</h2>
+            <div class="hint">Your latest saves and updates.</div>
+            <div id="dash-activity" class="activity-list"></div>
+          </div>
+          <div class="section">
+            <h2>Score distribution</h2>
+            <div class="hint">How your analysed properties score on the 0&ndash;100 investment score.</div>
+            <div class="chart-box half-height"><canvas id="chart-dash-scores"></canvas></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head-row">
+            <div>
+              <h2>Your properties</h2>
+              <div class="hint">Every property you've analysed. Open one to load it back into the model.</div>
+            </div>
+            <button id="dash-add" class="primary">Add property</button>
+          </div>
+          <div id="dash-props" class="prop-grid"></div>
+        </div>
+
+        <div class="section-head-row dash-break">
+          <div>
+            <h2>Portfolio analysis</h2>
+            <div class="hint">The numbers behind the current scenario.</div>
+          </div>
+        </div>
+
+        <div id="overview-cards" class="cards"></div>
+
+        <div class="section">
+          <h2>Property detail</h2>
+          <div class="hint">Every investment property in this scenario. Open a property's tab in Inputs to edit it.</div>
+          <div class="table-wrap"><table id="overview-props"></table></div>
+        </div>
+
+        <div class="section">
+          <h2>Growth scenarios</h2>
+          <div class="hint">The same portfolio at 3% / 5% / 7% capital growth — everything else unchanged.</div>
+          <div class="table-wrap"><table id="growth-table"></table></div>
+        </div>
+
+        <div class="section">
+          <h2>Growth &amp; equity</h2>
+          <div class="hint">Property value vs total investment debt vs net equity, over the full hold.</div>
+          <div class="chart-box"><canvas id="chart-ov-equity"></canvas></div>
+        </div>
+
+        <div class="chart-row">
+          <div class="section">
+            <h2>After-tax cash flow</h2>
+            <div class="hint">Negative bars = money out of pocket each year.</div>
+            <div class="chart-box half-height"><canvas id="chart-ov-cash"></canvas></div>
+          </div>
+          <div class="section">
+            <h2>Cumulative position</h2>
+            <div class="hint">Equity + cumulative cash flow − initial cash. This is wealth created vs not buying.</div>
+            <div class="chart-box half-height"><canvas id="chart-ov-cum"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== INPUTS ==================== -->
+      <section id="section-inputs" class="section-page">
+        <div id="prop-tabs" class="prop-tabs"></div>
+
+        <!-- Portfolio pane: settings shared across the whole portfolio -->
+        <div class="prop-page active" id="prop-page-portfolio">
+          <div class="section">
+            <h2>Portfolio</h2>
+            <div class="hint">Shared across every property: ownership, incomes and how long you model the whole portfolio.</div>
+            <div class="grid-form">
+              <div class="field"><label>Suburb <span class="unit">drives the area report</span></label>
+                <select id="suburb-select"><option value="0">— not set —</option></select></div>
+              <div class="field"><label>Hold portfolio for <span class="unit">yrs</span></label>
+                <input type="number" data-field="projectionYears"></div>
+              <div class="field"><label>State <span class="unit">duty + land tax</span></label>
+                <select data-field="state">
+                  <option value="QLD">Queensland</option>
+                  <option value="NSW">New South Wales</option>
+                  <option value="VIC">Victoria</option>
+                  <option value="SA">South Australia</option>
+                  <option value="WA">Western Australia</option>
+                  <option value="TAS">Tasmania</option>
+                  <option value="NT">Northern Territory</option>
+                  <option value="ACT">ACT</option>
+                </select></div>
+              <div class="field"><label>Buyer type <span class="unit">duty surcharge</span></label>
+                <select data-field="buyerType">
+                  <option value="resident">Australian resident</option>
+                  <option value="foreign">Foreign buyer</option>
+                </select></div>
+              <div class="field"><label>Ownership</label>
+                <select data-field="ownershipType">
+                  <option value="sole">Sole</option>
+                  <option value="joint_50_50">Joint (50/50)</option>
+                </select></div>
+              <div class="field"><label>Your taxable income <span class="unit">$</span></label>
+                <div class="masked-wrap">
+                  <input type="number" inputmode="numeric" data-numeric data-masked autocomplete="off" data-field="owner1TaxableIncome">
+                  <button type="button" class="mask-toggle" aria-label="Show or hide value">
+                    <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  </button>
+                </div></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Advanced — portfolio &amp; tax</h2>
+            <div class="hint">Negative gearing, land tax and CGT are assessed on YOU, across all properties together.</div>
+            <details class="advanced">
+              <summary>Ownership, income &amp; land tax</summary>
+              <div class="grid-form">
+                <div class="field"><label>Owner 2 taxable income <span class="unit">$</span></label>
+                  <div class="masked-wrap">
+                    <input type="number" inputmode="numeric" data-numeric data-masked autocomplete="off" data-field="owner2TaxableIncome">
+                    <button type="button" class="mask-toggle" aria-label="Show or hide value">
+                      <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                      <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    </button>
+                  </div></div>
+                <div class="field"><label>Income growth <span class="unit">%/yr</span></label>
+                  <input type="number" step="0.25" data-field="otherTaxableIncomeGrowthRate" data-pct></div>
+                <div class="field"><label>Medicare levy <span class="unit">%</span></label>
+                  <input type="number" step="0.5" data-field="medicareLevyRate" data-pct></div>
+                <div class="field"><label>Other AU land value <span class="unit">$</span></label>
+                  <input type="number" data-field="otherAuLandValue"></div>
+                <div class="field"><label>Other land growth <span class="unit">%/yr</span></label>
+                  <input type="number" step="0.25" data-field="otherLandGrowthRate" data-pct></div>
+                <div class="field check-field"><label>Include QLD land tax?</label>
+                  <input type="checkbox" data-field="includeLandTax"></div>
+              </div>
+            </details>
+            <details class="advanced">
+              <summary>Assumptions</summary>
+              <div class="grid-form">
+                <div class="field"><label>Expense inflation <span class="unit">%/yr</span></label>
+                  <input type="number" step="0.25" data-field="expenseGrowthRate" data-pct></div>
+                <div class="field"><label>Tax year <span class="unit">income tax tables</span></label>
+                  <select data-field="taxYear">
+                    <option value="2026-27">2026-27</option>
+                  </select></div>
+              </div>
+              <div class="source-note">Tax estimates are versioned by financial year — more years appear here as ATO tables are added.</div>
+            </details>
+          </div>
+        </div>
+
+        <!-- PPOR pane: the home the equity release is drawn against -->
+        <div class="prop-page" id="prop-page-ppor">
+          <div class="section">
+            <h2>PPOR — your home</h2>
+            <div class="hint">The property the top-up loan sits against. Each investment property draws its own slice of equity — those draws are set on the property's own tab.</div>
+            <div class="grid-form">
+              <div class="field addr-field"><label>PPOR address <span class="unit">your home</span></label>
+                <input type="text" autocomplete="off" id="ppor-address-input" data-field="pporAddress" placeholder="12 Smith St, Brisbane">
+                <div id="ppor-addr-dropdown" class="addr-dropdown hidden"></div>
+                <div class="addr-matched hidden" id="ppor-address-matched"></div></div>
+              <div class="field"><label>PPOR value <span class="unit">$</span></label>
+                <input type="number" data-field="pporValue"></div>
+              <div class="field"><label>PPOR loan balance <span class="unit">$</span></label>
+                <input type="number" data-field="pporLoanBalance"></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Advanced — PPOR loan &amp; equity release</h2>
+            <div class="hint">
+              The equity released against your home funds the deposits and costs. Its interest is a
+              real cost AND tax-deductible where the borrowed money was used for the investments.
+            </div>
+            <div class="grid-form">
+              <div class="field"><label>PPOR rate <span class="unit">%</span></label>
+                <input type="number" step="0.05" data-field="pporInterestRate" data-pct></div>
+              <div class="field"><label>PPOR term remaining <span class="unit">yrs</span></label>
+                <input type="number" data-field="pporLoanTermYearsRemaining"></div>
+              <div class="field"><label>Equity loan rate <span class="unit">%</span></label>
+                <input type="number" step="0.05" data-field="equityLoanRate" data-pct></div>
+              <div class="field"><label>Equity loan repayment</label>
+                <select data-field="equityLoanRepaymentType">
+                  <option value="interest_only">Interest only</option>
+                  <option value="principal_and_interest">P&amp;I</option>
+                </select></div>
+              <div class="field"><label>Equity loan term <span class="unit">yrs</span></label>
+                <input type="number" data-field="equityLoanTermYears"></div>
+              <div class="field"><label>Deductible share of equity loan <span class="unit">%</span></label>
+                <input type="number" step="1" data-field="equityLoanPurposePercent" data-pct></div>
+            </div>
+            <div class="source-note">PPOR's repayments and running costs show in the Cash Flow view under "PPOR (your home)".</div>
+          </div>
+
+          <div class="section">
+            <h2>Advanced — PPOR running costs</h2>
+            <div class="hint">Your home's own yearly costs, shown in the PPOR cash flow view. Grown with the portfolio expense rate.</div>
+            <details class="advanced">
+              <summary>Running costs (annual)</summary>
+              <div class="grid-form">
+                <div class="field"><label>Council rates <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="pporCouncilRatesAnnual"></div>
+                <div class="field"><label>Water rates <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="pporWaterRatesAnnual"></div>
+                <div class="field"><label>Insurance <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="pporInsuranceAnnual"></div>
+                <div class="field"><label>Maintenance <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="pporMaintenanceAnnual"></div>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <!-- IP pane: ONE set of per-property fields, bound to the active IP tab -->
+        <div class="prop-page" id="prop-page-ip">
+          <div class="section">
+            <h2 id="ip-pane-title">Property essentials</h2>
+            <div class="hint">Only what you need to start. Everything else sits under Advanced below.</div>
+            <div class="grid-form">
+              <div class="field"><label>Label</label>
+                <input type="text" autocomplete="off" data-field="label" placeholder="Investment property 1"></div>
+              <div class="field addr-field"><label>Address</label>
+                <input type="text" autocomplete="off" id="address-input" data-field="address" placeholder="6/14 Fawlers St, West Gladstone">
+                <div id="addr-dropdown" class="addr-dropdown hidden"></div>
+                <div class="addr-matched hidden" id="address-matched"></div></div>
+              <div class="field"><label>Purchase price <span class="unit">$</span></label>
+                <input type="number" data-field="purchasePrice"></div>
+              <div class="field"><label>Weekly rent <span class="unit">$/wk</span></label>
+                <input type="number" data-field="weeklyRent"></div>
+              <div class="field"><label>Bedrooms</label>
+                <input type="number" data-field="bedrooms"></div>
+              <div class="field"><label>Land value (unimproved) <span class="unit">$</span></label>
+                <input type="number" data-field="landValue"></div>
+              <div class="field"><label>Equity released <span class="unit">$ from PPOR</span></label>
+                <input type="number" data-field="equityReleased"></div>
+              <div class="field"><label>IP loan rate <span class="unit">%</span></label>
+                <input type="number" step="0.05" data-field="ipInterestRate" data-pct></div>
+              <div class="field"><label>Purchase year</label>
+                <input type="number" data-field="purchaseYear"></div>
+              <div class="field"><label>Sell in year</label>
+                <input type="number" data-field="saleYear"></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>Advanced</h2>
+            <div class="hint">Defaults are sensible — open a group only if you want to override.</div>
+
+            <details class="advanced">
+              <summary>Property &amp; purchase</summary>
+              <div class="grid-form">
+                <div class="field"><label>Property type</label>
+                  <select data-field="propertyType">
+                    <option value="house">House</option>
+                    <option value="unit">Unit / apartment</option>
+                    <option value="townhouse">Townhouse</option>
+                  </select></div>
+                <div class="field"><label>New build?</label>
+                  <input type="checkbox" data-field="isNewBuild"></div>
+                <div class="field"><label>Build year</label>
+                  <input type="number" data-field="buildYear"></div>
+                <div class="field"><label>Capital growth <span class="unit">%/yr</span></label>
+                  <input type="number" step="0.5" data-field="expectedCapitalGrowthRate" data-pct></div>
+                <div class="field"><label>Selling costs on sale <span class="unit">%</span></label>
+                  <input type="number" step="0.1" data-field="sellingCostRate" data-pct></div>
+                <div class="field"><label>Selling fixed costs <span class="unit">$</span></label>
+                  <input type="number" data-field="sellingFixedCosts"></div>
+                <div class="field"><label>Legal / conveyancing <span class="unit">$</span></label>
+                  <input type="number" data-field="legalFees"></div>
+                <div class="field"><label>Building &amp; pest inspection <span class="unit">$</span></label>
+                  <input type="number" data-field="buildingInspectionCost"></div>
+                <div class="field"><label>Quantity surveyor (sched.) <span class="unit">$</span></label>
+                  <input type="number" data-field="quantitySurveyorCost"></div>
+                <div class="field"><label>Initial repairs <span class="unit">$</span></label>
+                  <input type="number" data-field="initialRepairs"></div>
+                <div class="field"><label>Other acquisition costs <span class="unit">$</span></label>
+                  <input type="number" data-field="otherAcquisitionCosts"></div>
+              </div>
+            </details>
+
+            <details class="advanced">
+              <summary>Rent &amp; operating expenses</summary>
+              <div class="grid-form">
+                <div class="field"><label>Rent growth <span class="unit">%/yr</span></label>
+                  <input type="number" step="0.25" data-field="annualRentGrowthRate" data-pct></div>
+                <div class="field"><label>Vacancy <span class="unit">wks/yr</span></label>
+                  <input type="number" step="0.5" data-field="vacancyWeeksPerYear"></div>
+                <div class="field"><label>Management fee <span class="unit">%</span></label>
+                  <input type="number" step="0.1" data-field="propertyManagementRate" data-pct></div>
+                <div class="field"><label>Fee includes GST?</label>
+                  <input type="checkbox" data-field="propertyManagementGSTIncluded"></div>
+                <div class="field"><label>Letting fee <span class="unit">wks rent</span></label>
+                  <input type="number" step="0.5" data-field="lettingFeeWeeks"></div>
+                <div class="field"><label>Letting fee every <span class="unit">yrs</span></label>
+                  <input type="number" data-field="lettingFeeIntervalYears"></div>
+                <div class="field"><label>Renewal fee <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="renewalFeePerYear"></div>
+                <div class="field"><label>Council rates <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="councilRatesAnnual"></div>
+                <div class="field"><label>Water rates <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="waterRatesAnnual"></div>
+                <div class="field"><label>Insurance <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="insuranceAnnual"></div>
+                <div class="field"><label>Body corporate <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="bodyCorporateAnnual"></div>
+                <div class="field"><label>Maintenance <span class="unit">% of value</span></label>
+                  <input type="number" step="0.1" data-field="maintenanceRate" data-pct></div>
+                <div class="field"><label>Other expenses <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="otherAnnualExpenses"></div>
+                <div class="field"><label>Other deductible claims <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="otherDeductibleClaims"></div>
+              </div>
+              <div class="source-note">Extra negative-gearing claims — repairs, accountant fees, QS schedule top-ups. Deductible AND a real cash cost; grows with expense inflation.</div>
+            </details>
+
+            <details class="advanced">
+              <summary>Investment loan &amp; LMI</summary>
+              <div class="grid-form">
+                <div class="field"><label>LVR <span class="unit">%</span></label>
+                  <input type="number" step="1" data-field="ipLvr" data-pct></div>
+                <div class="field"><label>Or loan amount (0 = from LVR) <span class="unit">$</span></label>
+                  <input type="number" data-field="ipLoanAmountOverride"></div>
+                <div class="field"><label>Loan term <span class="unit">yrs</span></label>
+                  <input type="number" data-field="ipLoanTermYears"></div>
+                <div class="field"><label>Repayment type</label>
+                  <select data-field="ipRepaymentType">
+                    <option value="interest_only">Interest only, then P&amp;I</option>
+                    <option value="principal_and_interest">P&amp;I from day one</option>
+                  </select></div>
+                <div class="field"><label>Interest-only period <span class="unit">yrs</span></label>
+                  <input type="number" data-field="ipInterestOnlyYears"></div>
+                <div class="field"><label>Loan setup fee <span class="unit">$</span></label>
+                  <input type="number" data-field="ipLoanSetupFee"></div>
+                <div class="field"><label>Annual loan fees <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="ipLoanFeesAnnual"></div>
+                <div class="field"><label>Cash savings added <span class="unit">$</span></label>
+                  <input type="number" data-field="cashSavings"></div>
+                <div class="field"><label>LMI enabled?</label>
+                  <input type="checkbox" data-field="lmiEnabled"></div>
+                <div class="field"><label>LMI treatment</label>
+                  <select data-field="lmiTreatment">
+                    <option value="capitalised">Capitalised into loan</option>
+                    <option value="paid_cash">Paid in cash</option>
+                  </select></div>
+                <div class="field"><label>Amortise over <span class="unit">yrs</span></label>
+                  <input type="number" data-field="lmiAmortisationYears"></div>
+                <div class="field"><label>LMI quoted by bank (0 = estimate) <span class="unit">$</span></label>
+                  <input type="number" data-field="lmiOverride"></div>
+              </div>
+              <div class="source-note" id="lmi-note"></div>
+              <div class="source-note" id="ip-rate-hint"></div>
+            </details>
+
+            <details class="advanced">
+              <summary>Depreciation &amp; land</summary>
+              <div class="grid-form">
+                <div class="field"><label>Land value growth <span class="unit">%/yr</span></label>
+                  <input type="number" step="0.25" data-field="landValueGrowthRate" data-pct></div>
+                <div class="field"><label>Capital works rate <span class="unit">%/yr</span></label>
+                  <input type="number" step="0.05" data-field="capitalWorksRate" data-pct></div>
+                <div class="field"><label>Capital works base <span class="unit">$</span></label>
+                  <input type="number" data-field="capitalWorksBase"></div>
+                <div class="field"><label>Plant &amp; equipment eligible?</label>
+                  <input type="checkbox" data-field="plantEquipmentEligible"></div>
+                <div class="field"><label>P&amp;E annual depreciation <span class="unit">$/yr</span></label>
+                  <input type="number" data-field="plantEquipmentAnnualDepreciation"></div>
+                <div class="field"><label>P&amp;E years remaining</label>
+                  <input type="number" data-field="plantEquipmentYearsRemaining"></div>
+              </div>
+              <div class="source-note">Div 43 capital works: 2.5%/yr of construction cost over 40 yrs. Div 40 plant &amp; equipment: only claimable on NEW property — second-hand inclusions are switched off automatically.</div>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== PROPERTY INTELLIGENCE ==================== -->
+      <section id="section-property" class="section-page">
+        <div class="section">
+          <h2>Property map</h2>
+          <div class="hint">Live Queensland open data for the selected address — the parcel itself, its planning context and the hazard overlays that matter for insurance and resale. Pick the address from the dropdown in Inputs (or type the full address) first.</div>
+          <div class="prop-map-wrap">
+            <div id="property-map"></div>
+            <div class="prop-map-controls">
+              <div class="prop-ctl-group">
+                <button class="chip active" id="prop-base-sat" data-base="sat">Satellite</button>
+                <button class="chip" id="prop-base-topo" data-base="topo">QLD topo</button>
+              </div>
+              <div class="prop-ctl-group">
+                <button class="chip" id="prop-ov-bushfire" data-ov="bushfire">Bushfire prone</button>
+                <button class="chip" id="prop-ov-flood" data-ov="flood">Flood study</button>
+                <button class="chip active" id="prop-ov-parcel" data-ov="parcel">Parcel</button>
+              </div>
+            </div>
+            <div id="property-status" class="prop-map-status"></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>What the government data says</h2>
+          <div class="hint">Straight from Queensland Government spatial services. Where a layer can't answer for this address it says so rather than guessing.</div>
+          <div id="property-cards" class="cards"></div>
+          <div id="property-details" class="kv-grid"></div>
+          <div id="property-sources" class="source-note"></div>
+        </div>
+      </section>
+
+      <!-- ==================== AREA REPORT ==================== -->
+      <section id="section-area" class="section-page">
+        <div class="section">
+          <h2>Suburb snapshot</h2>
+          <div class="hint">Reference data for the suburb you selected in Inputs. Sources and as-of dates shown under each stat.</div>
+          <div id="area-cards" class="cards"></div>
+          <div id="area-links" class="source-note"></div>
+        </div>
+
+        <div class="section">
+          <h2>Investment score</h2>
+          <div class="hint">Seven factors, points shown for each. Factors without data are left unscored and dropped from the total.</div>
+          <div id="score-panel"></div>
+          <div class="table-wrap"><table id="score-table"></table></div>
+        </div>
+
+        <div class="section">
+          <h2>Comparable sales</h2>
+          <div class="hint">Save the scenario first. Search nearby solds with AI, or paste one from realestate.com.au below.</div>
+          <div id="comp-search-row" style="margin-top:10px">
+            <button id="btn-find-comps">Find sold comps (AI)</button>
+            <span id="comp-search-hint" class="source-note"></span>
+          </div>
+          <div id="comp-search-results" class="hidden" style="margin-top:10px">
+            <div class="table-wrap"><table id="comp-search-table"></table></div>
+            <div style="margin-top:10px"><button id="btn-save-comps" class="primary">Save selected</button>
+              <span id="comp-search-msg" class="source-note"></span></div>
+          </div>
+          <div class="grid-form" id="comp-form">
+            <div class="field"><label>Address</label><input type="text" autocomplete="off" id="comp-address"></div>
+            <div class="field"><label>Sold price <span class="unit">$</span></label><input type="number" id="comp-price"></div>
+            <div class="field"><label>Sold date</label><input type="text" autocomplete="off" id="comp-date" placeholder="2026-08"></div>
+            <div class="field"><label>Beds</label><input type="number" id="comp-beds"></div>
+            <div class="field"><label>Land <span class="unit">m²</span></label><input type="number" id="comp-land"></div>
+            <div class="field"><label>Rent est <span class="unit">$/wk</span></label><input type="number" id="comp-rent"></div>
+            <div class="field"><label>Link</label><input type="text" autocomplete="off" id="comp-url"></div>
+          </div>
+          <div style="margin-top:10px"><button id="btn-add-comp" class="primary">Add comparable</button>
+            <span id="comp-msg" class="source-note"></span></div>
+          <div class="table-wrap"><table id="comp-table"></table></div>
+        </div>
+
+        <div class="section">
+          <h2>Comparable rentals</h2>
+          <div class="hint">Manually captured rental evidence near the property — paste from a listing and compare against your rent assumption.</div>
+          <div class="grid-form" id="rental-form">
+            <div class="field"><label>Address</label><input type="text" autocomplete="off" id="rental-address"></div>
+            <div class="field"><label>Rent <span class="unit">$/wk</span></label><input type="number" id="rental-rent"></div>
+            <div class="field"><label>Beds</label><input type="number" id="rental-beds"></div>
+            <div class="field"><label>Type</label>
+              <select id="rental-type">
+                <option value="house">House</option>
+                <option value="unit">Unit / apartment</option>
+                <option value="townhouse">Townhouse</option>
+              </select></div>
+            <div class="field"><label>Notes</label><input type="text" autocomplete="off" id="rental-notes" maxlength="500"></div>
+            <div class="field"><label>&nbsp;</label><button id="btn-add-rental" class="primary">Add rental</button></div>
+          </div>
+          <div id="rental-summary" class="source-note"></div>
+          <div class="table-wrap"><table id="rental-table"></table></div>
+        </div>
+
+        <div class="section">
+          <h2>Risk checklist</h2>
+          <div class="hint">Buyer due-diligence prompts from your inputs and suburb data. ✓ fine · ⚠ needs attention · · no data — verify manually before purchase.</div>
+          <div id="risk-list"></div>
+        </div>
+
+        <div class="section">
+          <h2>Reference data</h2>
+          <details class="advanced">
+            <summary>Bank investor rates</summary>
+            <div class="table-wrap"><table id="rates-table"></table></div>
+            <div class="grid-form" style="margin-top:10px">
+              <div class="field"><label>Bank</label><input type="text" autocomplete="off" id="rate-bank"></div>
+              <div class="field"><label>Investor IO <span class="unit">%</span></label><input type="number" step="0.01" id="rate-io"></div>
+              <div class="field"><label>Investor P&amp;I <span class="unit">%</span></label><input type="number" step="0.01" id="rate-pi"></div>
+              <div class="field"><label>Source</label><input type="text" autocomplete="off" id="rate-source"></div>
+            </div>
+            <div style="margin-top:10px"><button id="btn-add-rate">Add rate</button></div>
+          </details>
+          <details class="advanced">
+            <summary>Suburb data</summary>
+            <div class="table-wrap"><table id="suburb-table"></table></div>
+            <div class="grid-form" style="margin-top:10px">
+              <div class="field"><label>Suburb</label><input type="text" autocomplete="off" id="sub-name"></div>
+              <div class="field"><label>Postcode</label><input type="text" autocomplete="off" id="sub-postcode"></div>
+              <div class="field"><label>Median price <span class="unit">$</span></label><input type="number" id="sub-price"></div>
+              <div class="field"><label>3-bed rent <span class="unit">$/wk</span></label><input type="number" id="sub-rent3"></div>
+              <div class="field"><label>Vacancy <span class="unit">%</span></label><input type="number" step="0.1" id="sub-vacancy"></div>
+              <div class="field"><label>5-yr growth <span class="unit">%</span></label><input type="number" id="sub-growth"></div>
+            </div>
+            <div style="margin-top:10px"><button id="btn-add-suburb">Add suburb</button></div>
+          </details>
+        </div>
+      </section>
+
+      <!-- ==================== CASH FLOW ==================== -->
+      <section id="section-cashflow" class="section-page">
+        <div class="section">
+          <h2>Year detail <select id="cf-prop" style="margin-left:8px"></select> <select id="cf-year" style="margin-left:8px"></select></h2>
+          <div class="hint" id="cf-subtitle"></div>
+          <div class="table-wrap"><table id="cf-table"></table></div>
+          <div class="source-note">Per-property views allocate portfolio-level tax and land tax pro-rata — the Portfolio view shows the true assessed totals.</div>
+        </div>
+
+        <div class="chart-row">
+          <div class="section">
+            <h2 id="cf-chart-expenses-title">Operating expenses by year</h2>
+            <div class="chart-box"><canvas id="chart-cf-expenses"></canvas></div>
+          </div>
+          <div class="section">
+            <h2 id="cf-chart-cash-title">Cash flow: pre-tax vs after-tax</h2>
+            <div class="hint">After-tax includes the negative-gearing refund.</div>
+            <div class="chart-box"><canvas id="chart-cf-cash"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== PROJECTIONS ==================== -->
+      <section id="section-projections" class="section-page">
+        <div class="section">
+          <h2>Year-by-year projection <select id="proj-prop" style="margin-left:8px"></select></h2>
+          <div class="hint">Highlighted row = interest-only period ends and P&amp;I repayments begin.</div>
+          <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table id="proj-table"></table></div>
+        </div>
+        <div class="chart-row">
+          <div class="section">
+            <h2>Value, debt &amp; equity</h2>
+            <div class="chart-box"><canvas id="chart-proj-value"></canvas></div>
+          </div>
+          <div class="section">
+            <h2>Rent vs expenses</h2>
+            <div class="chart-box"><canvas id="chart-proj-rent"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== EXIT / CGT ==================== -->
+      <section id="section-exit" class="section-page">
+        <div class="section">
+          <h2>Sale <select id="exit-prop" style="margin-left:8px"></select></h2>
+          <div id="exit-cards" class="cards"></div>
+        </div>
+
+        <div class="section">
+          <h2>Sale waterfall</h2>
+          <div class="chart-box tall"><canvas id="chart-exit-waterfall"></canvas></div>
+        </div>
+
+        <div class="section">
+          <h2>Cost base &amp; CGT working</h2>
+          <div class="table-wrap"><table id="exit-table"></table></div>
+          <div class="source-note" id="exit-note"></div>
+        </div>
+      </section>
+
+      <!-- ==================== BORROWING ==================== -->
+      <section id="section-borrowing" class="section-page">
+        <div class="section">
+          <h2>Your serviceability inputs</h2>
+          <div class="hint">Bank-style assessment: all loans assessed as P&amp;I at rate + buffer, rent shaded.</div>
+          <div class="grid-form">
+            <div class="field"><label>Owner 1 gross income <span class="unit">$</span></label>
+              <input type="number" data-field="bcOwner1GrossIncome"></div>
+            <div class="field"><label>Owner 2 gross income <span class="unit">$</span></label>
+              <input type="number" data-field="bcOwner2GrossIncome"></div>
+            <div class="field"><label>Other income <span class="unit">$</span></label>
+              <input type="number" data-field="bcOtherIncome"></div>
+            <div class="field"><label>Living expenses <span class="unit">$/yr</span></label>
+              <input type="number" data-field="bcLivingExpensesAnnual"></div>
+            <div class="field"><label>Other debt repayments <span class="unit">$/yr</span></label>
+              <input type="number" data-field="bcOtherDebtRepaymentsAnnual"></div>
+            <div class="field"><label>Rental income haircut <span class="unit">%</span></label>
+              <input type="number" step="5" data-field="bcRentalHaircut" data-pct></div>
+            <div class="field"><label>Serviceability buffer <span class="unit">%</span></label>
+              <input type="number" step="0.5" data-field="bcBuffer" data-pct></div>
+            <div class="field"><label>DTI warning above <span class="unit">x</span></label>
+              <input type="number" step="0.5" data-field="bcDtiWarn"></div>
+          </div>
+        </div>
+        <div id="borrowing-cards" class="cards"></div>
+        <div class="section">
+          <h2>Rate sensitivity</h2>
+          <div class="hint">Max additional borrowing as interest rates move (buffer always applied on top).</div>
+          <div class="chart-box"><canvas id="chart-bc-sens"></canvas></div>
+        </div>
+      </section>
+
+      <!-- ==================== SCENARIOS ==================== -->
+      <section id="section-scenarios" class="section-page">
+        <div class="section">
+          <h2>Saved scenarios</h2>
+          <div class="table-wrap"><table id="scn-table"></table></div>
+        </div>
+        <div class="section">
+          <h2>Compare (tick up to 3)</h2>
+          <div class="table-wrap"><table id="compare-table"></table></div>
+          <div class="chart-row">
+            <div class="section">
+              <h2>10-year equity</h2>
+              <div class="chart-box half-height"><canvas id="chart-cmp-equity"></canvas></div>
+            </div>
+            <div class="section">
+              <h2>Weekly out-of-pocket (year 1)</h2>
+              <div class="chart-box half-height"><canvas id="chart-cmp-oop"></canvas></div>
+            </div>
+          </div>
+          <div class="section">
+            <h2>Property value over time</h2>
+            <div class="chart-box"><canvas id="chart-cmp-value"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== ACTUALS (portfolio tracking) =========== -->
+      <section id="section-actuals" class="section-page">
+        <div class="section">
+          <h2>Record actuals</h2>
+          <div class="hint" id="actuals-hint">What actually happened each period. Saving the same period + property again updates it.</div>
+          <div class="grid-form">
+            <div class="field"><label>Property</label><select id="act-property"></select></div>
+            <div class="field"><label>Period start</label><input type="date" id="act-start"></div>
+            <div class="field"><label>Period end</label><input type="date" id="act-end"></div>
+            <div class="field"><label>Rent received <span class="unit">$</span></label><input type="number" id="act-rent"></div>
+            <div class="field"><label>Expenses <span class="unit">$</span></label><input type="number" id="act-expenses"></div>
+            <div class="field"><label>Loan balance <span class="unit">$ optional</span></label><input type="number" id="act-loan"></div>
+            <div class="field"><label>Valuation <span class="unit">$ optional</span></label><input type="number" id="act-value"></div>
+            <div class="field"><label>Notes</label><input type="text" autocomplete="off" id="act-notes" maxlength="2000"></div>
+            <div class="field"><label>&nbsp;</label><button id="act-save" class="primary">Save period</button></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Actual vs projected</h2>
+          <div class="hint">Projected figures come from the engine at each period's calendar year. Empty optional fields don't show a variance.</div>
+          <div class="table-wrap"><table id="actuals-table"></table></div>
+        </div>
+      </section>
+
+      <!-- ==================== BA WORKSPACE (buyer's agents only) ==== -->
+      <section id="section-workspace" class="section-page">
+        <div class="section">
+          <h2>Branding &amp; plan</h2>
+          <div class="hint">Branding shows on every client portal you share. Trial holds 3 active proposals; Pro is unlimited.</div>
+          <div class="grid-form">
+            <div class="field"><label>Business name</label><input type="text" autocomplete="off" id="ws-brand-name" maxlength="80" placeholder="Smith Property Buyers"></div>
+            <div class="field"><label>Accent colour</label><input type="color" id="ws-brand-color" value="#6366f1"></div>
+            <div class="field"><label>Tagline <span class="unit">optional</span></label><input type="text" autocomplete="off" id="ws-brand-tagline" maxlength="140" placeholder="Independent advice, data first"></div>
+            <div class="field"><label>Logo <span class="unit">PNG/JPG ≤ 1 MB</span></label>
+              <input type="file" id="ws-brand-logo" accept="image/png,image/jpeg"></div>
+            <div class="field"><label>&nbsp;</label><button id="ws-save-branding" class="primary">Save branding</button></div>
+          </div>
+          <div class="portal-actions">
+            <span>Plan: <strong id="ws-plan">trial</strong></span>
+            <button id="ws-logo-upload" class="btn-ghost">Upload logo</button>
+            <span id="ws-logo-msg" class="source-note"></span>
+            <button id="ws-upgrade" class="btn-ghost">Upgrade to Pro</button>
+            <span id="ws-plan-msg" class="source-note"></span>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>Clients</h2>
+          <div class="hint">Clients you share property proposals with. They sign in with an emailed code — no passwords.</div>
+          <div class="grid-form" id="ws-client-form">
+            <div class="field"><label>Name</label><input type="text" autocomplete="off" id="ws-client-name" placeholder="Jane Smith"></div>
+            <div class="field"><label>Email</label><input type="email" id="ws-client-email" placeholder="jane@example.com"></div>
+            <div class="field"><label>Phone <span class="unit">optional</span></label><input type="text" autocomplete="off" id="ws-client-phone"></div>
+            <div class="field"><label>&nbsp;</label><button id="ws-add-client" class="primary">Add client</button></div>
+          </div>
+          <div class="table-wrap"><table id="ws-clients"></table></div>
+        </div>
+
+        <div class="section">
+          <h2>Share a property proposal</h2>
+          <div class="hint">Snapshots the scenario — edit the source freely afterwards, the client's link keeps what you shared. The share link is shown once; rotate it any time.</div>
+          <div class="grid-form" id="ws-share-form">
+            <div class="field"><label>Scenario</label><select id="ws-scenario"></select></div>
+            <div class="field"><label>Client</label><select id="ws-client"></select></div>
+            <div class="field"><label>Title <span class="unit">optional</span></label><input type="text" autocomplete="off" id="ws-title" placeholder="defaults to scenario name"></div>
+            <div class="field"><label>Link expires <span class="unit">days, 0 = never</span></label><input type="number" id="ws-expiry" value="30"></div>
+            <div class="field"><label>&nbsp;</label><button id="ws-create" class="primary">Create share link</button></div>
+          </div>
+          <div id="ws-new-link" class="hidden">
+            <div class="field"><label>Share link (copied to clipboard, shown once)</label>
+              <input type="text" autocomplete="off" id="ws-link" readonly></div>
+            <div class="portal-actions">
+              <input type="email" id="ws-email" placeholder="client email">
+              <button id="ws-email-send" class="btn-ghost">Email link</button>
+              <span id="ws-email-msg" class="source-note"></span>
+            </div>
+            <div class="source-note">Anyone with this link sees the proposal as this client — send it to them privately.</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h2>All shared properties</h2>
+          <div class="table-wrap"><table id="ws-presentations"></table></div>
+        </div>
+
+        <div class="section hidden" id="ws-activity-box">
+          <h2 id="ws-activity-title">Activity</h2>
+          <div id="ws-events" class="kv"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-foot">
+      AUD &middot; estimates only, not financial or tax advice &middot; rates: QRO &amp; ATO (Nov 2026)
+      &middot; property data: Queensland Government open data
+    </footer>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- First-run coach marks -->
+  <div id="tour" class="tour hidden" data-step="0">
+    <div id="tour-tip" class="tour-tip"></div>
+    <div id="tour-card" class="tour-card">
+      <button id="tour-close" class="icon-btn tour-x" title="Close">&times;</button>
+      <h3 id="tour-title"></h3>
+      <p id="tour-body"></p>
+      <div class="tour-foot">
+        <div id="tour-dots" class="tour-dots"></div>
+        <button id="tour-skip" class="btn-ghost">Skip</button>
+        <button id="tour-next" class="primary">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="login-overlay" class="login-overlay hidden">
+    <div class="login-card">
+      <h2>Property Analyser</h2>
+      <p class="hint">Sign in to see your scenarios. Each person's scenarios are private to them.
+        <a href="/welcome">What is this?</a></p>
+      <div class="field"><label>Email</label>
+        <input type="email" id="auth-email" autocomplete="email"></div>
+      <div class="field"><label>Password <span class="unit">min 8 chars</span></label>
+        <input type="password" id="auth-password" autocomplete="current-password"></div>
+      <div class="field check-field"><label for="auth-ba">Buyer's agent account (Workspace + client sharing)</label>
+        <input type="checkbox" id="auth-ba"></div>
+      <div class="login-actions">
+        <button id="btn-login" class="primary">Sign in</button>
+        <button id="btn-register">Create account</button>
+      </div>
+      <div id="auth-error" class="auth-error hidden"></div>
+    </div>
+  </div>
+
+  <script src="/vendor/chart.umd.js"></script>
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/engine.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

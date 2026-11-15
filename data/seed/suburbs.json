@@ -1,0 +1,129 @@
+{
+  "suburbs": [
+    {
+      "name": "Gladstone Central",
+      "postcode": "4680",
+      "state": "QLD",
+      "medianPrice": 545000,
+      "medianRent2Bed": 460,
+      "medianRent3Bed": 520,
+      "medianRent4Bed": 595,
+      "vacancyPct": 1.4,
+      "growth5yrPct": 74.0,
+      "populationGrowthPct": 1.5,
+      "approvalsRatio": 1.0,
+      "medianDaysOnMarket": 35,
+      "sources": {
+        "medianPrice": {"source": "realestate.com.au suburb page (houses; CoreLogic $543.5k 12m to Jun-2026)", "asOf": "2026-10"},
+        "medianRent2Bed": {"source": "RTA Qld median rents, postcode 4680, house 2-bed", "asOf": "2026-Q3"},
+        "medianRent3Bed": {"source": "RTA Qld median rents, postcode 4680, house 3-bed", "asOf": "2026-Q3"},
+        "medianRent4Bed": {"source": "RTA Qld median rents, postcode 4680, house 4-bed", "asOf": "2026-Q3"},
+        "vacancyPct": {"source": "SQM Research vacancy rate, postcode 4680 (1.36%)", "asOf": "2026-09"},
+        "growth5yrPct": {"source": "CoreLogic via ABC News: Gladstone median house +74% over 5 years to Jun-2025 (region-wide)", "asOf": "2025-06"},
+        "populationGrowthPct": {"source": "QGSO/REMPLEN, Gladstone Region LGA (pop ~69,046)", "asOf": "2026"},
+        "approvalsRatio": {"source": "Estimate: Gladstone LGA 237 dwelling approvals FY2025-26 / ~24,000 dwellings", "asOf": "2025-26FY"},
+        "medianDaysOnMarket": {"source": "Estimate: Gladstone suburbs 30-48 days", "asOf": "2026-07"}
+      }
+    },
+    {
+      "name": "West Gladstone",
+      "postcode": "4680",
+      "state": "QLD",
+      "medianPrice": 557000,
+      "medianRent2Bed": 460,
+      "medianRent3Bed": 500,
+      "medianRent4Bed": 580,
+      "vacancyPct": 1.4,
+      "growth5yrPct": 74.0,
+      "populationGrowthPct": 1.5,
+      "approvalsRatio": 1.0,
+      "medianDaysOnMarket": 15,
+      "sources": {
+        "medianPrice": {"source": "realestate.com.au (houses, trailing 12m; property.com.au $555.5k)", "asOf": "2026-10"},
+        "medianRent2Bed": {"source": "Postcode 4680 house 2-bed (no suburb-level RTA data — thin bond volume)", "asOf": "2026-Q3"},
+        "medianRent3Bed": {"source": "RTA suburb sheet West Gladstone house 3-bed = $500", "asOf": "2026-Q3"},
+        "medianRent4Bed": {"source": "RTA suburb sheet West Gladstone house 4-bed", "asOf": "2026-Q1"},
+        "vacancyPct": {"source": "SQM postcode 4680 (1.36%, shared with Gladstone Central)", "asOf": "2026-09"},
+        "growth5yrPct": {"source": "No suburb-specific figure published; Gladstone region-wide +74% (CoreLogic). Recent: +16.0% 12m, +32.3% 24m", "asOf": "2026-03"},
+        "populationGrowthPct": {"source": "QGSO/REMPLEN Gladstone LGA", "asOf": "2026"},
+        "approvalsRatio": {"source": "Estimate as per Gladstone LGA", "asOf": "2025-26FY"},
+        "medianDaysOnMarket": {"source": "Cotality via yourinvestmentpropertymag.com.au (houses, 12m)", "asOf": "2026-03"}
+      }
+    },
+    {
+      "name": "Sarina",
+      "postcode": "4737",
+      "state": "QLD",
+      "medianPrice": 625000,
+      "medianRent2Bed": null,
+      "medianRent3Bed": 600,
+      "medianRent4Bed": 660,
+      "vacancyPct": 0.5,
+      "growth5yrPct": 27.7,
+      "populationGrowthPct": 0.9,
+      "approvalsRatio": 1.1,
+      "medianDaysOnMarket": 87,
+      "sources": {
+        "medianPrice": {"source": "realestate.com.au (houses; HtAG ~$688k)", "asOf": "2026-10"},
+        "medianRent2Bed": {"source": "Not published by RTA (insufficient bonds lodged)", "asOf": "2026-Q3"},
+        "medianRent3Bed": {"source": "RTA postcode 4737 house 3-bed = $600", "asOf": "2026-Q3"},
+        "medianRent4Bed": {"source": "RTA postcode 4737 house 4-bed = $660", "asOf": "2026-Q3"},
+        "vacancyPct": {"source": "SQM postcode 4737 (0.5% — volatile small base, 2026 range 0.5-3.4%)", "asOf": "2026-09"},
+        "growth5yrPct": {"source": "realestate.com.au 5-year median price trend (houses)", "asOf": "2026-10"},
+        "populationGrowthPct": {"source": "ABS Regional Population: Mackay (R) LGA +0.87%", "asOf": "2025-06"},
+        "approvalsRatio": {"source": "Estimate: Mackay LGA 601 approvals FY25-26 / ~52-55k dwellings", "asOf": "2025-26FY"},
+        "medianDaysOnMarket": {"source": "Boomscore (Sarina houses)", "asOf": "2026"}
+      }
+    },
+    {
+      "name": "Beaconsfield",
+      "postcode": "4740",
+      "state": "QLD",
+      "medianPrice": 725000,
+      "medianRent2Bed": 530,
+      "medianRent3Bed": 670,
+      "medianRent4Bed": 740,
+      "vacancyPct": 1.2,
+      "growth5yrPct": 57.0,
+      "populationGrowthPct": 0.9,
+      "approvalsRatio": 1.1,
+      "medianDaysOnMarket": 35,
+      "sources": {
+        "medianPrice": {"source": "realestate.com.au houses Sep-25 to Sep-26 (Domain CY-2026 $683.75k)", "asOf": "2026-09"},
+        "medianRent2Bed": {"source": "RTA postcode 4740 house 2-bed (Mackay urban aggregate incl. Beaconsfield)", "asOf": "2026-Q3"},
+        "medianRent3Bed": {"source": "RTA suburb sheet: Beaconsfield house 3-bed = $680", "asOf": "2026-Q3"},
+        "medianRent4Bed": {"source": "RTA suburb sheet: Beaconsfield house 4-bed = $750", "asOf": "2026-Q3"},
+        "vacancyPct": {"source": "SQM postcode 4740 (1.15%); REIQ Mackay quarter 0.9%", "asOf": "2026-09"},
+        "growth5yrPct": {"source": "Derived: ~9.4% p.a. compound over 5 years (REA-aggregated)", "asOf": "2026-09"},
+        "populationGrowthPct": {"source": "ABS Mackay (R) LGA +0.87%", "asOf": "2025-06"},
+        "approvalsRatio": {"source": "Estimate: Mackay LGA ratio applied", "asOf": "2025-26FY"},
+        "medianDaysOnMarket": {"source": "REA / heatmaps.com.au Beaconsfield profile", "asOf": "2026"}
+      }
+    },
+    {
+      "name": "Brisbane City",
+      "postcode": "4000",
+      "state": "QLD",
+      "medianPrice": 1213000,
+      "medianRent2Bed": 500,
+      "medianRent3Bed": 850,
+      "medianRent4Bed": null,
+      "vacancyPct": 2.4,
+      "growth5yrPct": 54.5,
+      "populationGrowthPct": 2.1,
+      "approvalsRatio": 2.5,
+      "medianDaysOnMarket": 48,
+      "sources": {
+        "medianPrice": {"source": "realestate.com.au Brisbane City houses (thin market; postcode unit-dominated, median unit $785k)", "asOf": "2026-10"},
+        "medianRent2Bed": {"source": "RTA postcode 4000 house 2-bed = $500", "asOf": "2026-Q2"},
+        "medianRent3Bed": {"source": "RTA postcode 4000 house 3-bed = $850", "asOf": "2026-Q3"},
+        "medianRent4Bed": {"source": "Not published by RTA (too few 4-bed house bonds)", "asOf": "2026-Q3"},
+        "vacancyPct": {"source": "SQM postcode 4000 (2.36%)", "asOf": "2026-09"},
+        "growth5yrPct": {"source": "realestate.com.au 5-yr median price trend: $785k (Oct-2020) to $1.213m (Oct-2025), houses", "asOf": "2025-10"},
+        "populationGrowthPct": {"source": "ABS Regional Population: Greater Brisbane +58,200 (+2.1%)", "asOf": "2025-06"},
+        "approvalsRatio": {"source": "Estimate: Brisbane LGA ~13-15k approvals p.a. / ~540k dwellings (10-yr high)", "asOf": "2025-26FY"},
+        "medianDaysOnMarket": {"source": "realestate.com.au Spring Hill 4000 (same postcode proxy)", "asOf": "2026"}
+      }
+    }
+  ]
+}
