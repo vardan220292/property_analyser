@@ -1374,6 +1374,108 @@
       (STATE_RATE_SHORT[st] || 'QRO & ATO') + ' (Nov 2026)';
   }
 
+
+  // Decision panels — concise, data-led guidance for each major workflow.
+  function decisionPanel(id, eyebrow, title, body, stats) {
+    const host = document.getElementById(id);
+    if (!host) return;
+    let panel = host.querySelector(':scope > .decision-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.className = 'decision-panel';
+      host.insertBefore(panel, host.children[1] || null);
+    }
+    panel.innerHTML = `
+      <div class="decision-panel-copy">
+        <div class="decision-eyebrow">${escapeHtml(eyebrow)}</div>
+        <h2>${escapeHtml(title)}</h2>
+        <p>${escapeHtml(body)}</p>
+      </div>
+      <div class="decision-stat-grid">${(stats || []).map(s => `
+        <div class="decision-stat">
+          <span>${escapeHtml(s.label)}</span>
+          <strong>${escapeHtml(s.value)}</strong>
+          ${s.note ? `<small>${escapeHtml(s.note)}</small>` : ''}
+        </div>`).join('')}</div>`;
+  }
+
+  function renderDecisionPanels() {
+    if (!state.result) return;
+    const m = state.result.metrics;
+    const idx = activePropertyIndex();
+    const p = state.inputs.properties[idx] || {};
+    const propName = p.label || p.address || 'Investment property';
+    const propView = viewData();
+    const cashRows = propView.rows || [];
+    const first = cashRows[0] || {};
+    const last = cashRows[cashRows.length - 1] || {};
+    const x = propView.exit || state.result.exit || {};
+    const suburb = currentSuburb();
+
+    decisionPanel('section-inputs','SETUP CHECKPOINT','Your investment at a glance',
+      'A live summary of the assumptions currently driving the model. Change any input below and the figures recalculate automatically.',
+      [
+        {label:'Purchase price',value:fmtMoney(m.purchasePrice)},
+        {label:'Cash required',value:fmtMoney(m.initialCashInvested)},
+        {label:'Weekly after-tax',value:signed(m.weeklyOutOfPocket)},
+        {label:'Gross yield',value:fmtPct(m.grossYield)}
+      ]);
+
+    decisionPanel('section-property','PROPERTY PROFILE',propName,
+      p.address ? 'Address and government spatial layers are used to build this property view. Treat missing layers as unknown, not as a clear result.' : 'Add and locate the full property address in Investment Inputs to load parcel and Queensland spatial information.',
+      [
+        {label:'Address',value:p.address || 'Not entered'},
+        {label:'Location match',value:(p.addressMeta && p.addressMeta.lat != null) ? 'Coordinates found' : 'Pending'},
+        {label:'Map layers',value:'Parcel · flood · bushfire',note:'Availability depends on location'}
+      ]);
+
+    decisionPanel('section-area','SUBURB RESEARCH',suburb ? suburb.name + ' · ' + suburb.postcode : 'Select a suburb to begin',
+      suburb ? 'Use the score as a screening aid, then validate the underlying sales, rental evidence and risk factors before making an offer.' : 'Choose the suburb in Investment Inputs. Market indicators and the investment score will appear here when reference data is available.',
+      suburb ? [
+        {label:'Median price',value:suburb.medianPrice ? fmtMoney(suburb.medianPrice) : 'No data'},
+        {label:'3-bed rent',value:suburb.medianRent3Bed ? fmtMoney(suburb.medianRent3Bed)+'/wk' : 'No data'},
+        {label:'Vacancy',value:suburb.vacancyPct != null ? suburb.vacancyPct.toFixed(1)+'%' : 'No data'},
+        {label:'5-year growth',value:suburb.growth5yrPct != null ? suburb.growth5yrPct.toFixed(1)+'%' : 'No data'}
+      ] : []);
+
+    decisionPanel('section-cashflow','CASH FLOW DECISION','What does it cost to hold?',
+      'Positive after-tax cash flow is a surplus; negative cash flow means cash you need to contribute. Select a year below to inspect every line item.',
+      [
+        {label:'Year 1 after-tax',value:signed(first.afterTaxCashFlow || 0)},
+        {label:'Weekly contribution',value:fmtMoney(Math.max(0,-(first.afterTaxCashFlow || 0))/52)},
+        {label:'Annual rent',value:fmtMoney(first.grossRent || 0)},
+        {label:'Annual operating costs',value:fmtMoney(first.operatingExpenses || 0)}
+      ]);
+
+    decisionPanel('section-projections','LONG-TERM OUTLOOK','Where could the investment be heading?',
+      'The model compares projected property value with debt over your selected holding period. These are assumptions-based projections, not forecasts.',
+      [
+        {label:'Ending property value',value:fmtMoney(last.propertyValue || 0)},
+        {label:'Ending debt',value:fmtMoney(last.totalDebt || 0)},
+        {label:'Ending equity',value:fmtMoney(last.netEquity || 0)},
+        {label:'Cumulative after-tax CF',value:signed(last.cumulativeAfterTaxCashFlow || 0)}
+      ]);
+
+    decisionPanel('section-exit','EXIT CHECKPOINT','What might you walk away with?',
+      'Estimated proceeds are shown after selling costs, CGT and loan payouts. Review the cost-base working and tax assumptions below before relying on the result.',
+      [
+        {label:'Sale price',value:fmtMoney(x.salePrice || 0)},
+        {label:'Estimated CGT',value:fmtMoney(x.capitalGainsTax || 0)},
+        {label:'Loan payouts',value:fmtMoney((x.ipLoanBalanceAtSale || 0)+(x.equityLoanBalanceAtSale || 0))},
+        {label:'Net sale proceeds',value:fmtMoney(x.netSaleProceeds || 0)}
+      ]);
+
+    const compare = state.compareData || [];
+    decisionPanel('section-scenarios','DECISION COMPARISON','Compare the trade-offs, not just the purchase price',
+      'Select up to three saved scenarios below. Focus on upfront cash, ongoing contribution, equity and estimated exit position together.',
+      [
+        {label:'Selected scenarios',value:String(compare.length)+'/3'},
+        {label:'Current scenario cash',value:fmtMoney(m.initialCashInvested)},
+        {label:'Current weekly position',value:signed(m.weeklyOutOfPocket)},
+        {label:'10-year equity',value:fmtMoney(m.tenYearEquity)}
+      ]);
+  }
+
   function recalc() {
     try {
       state.result = E.calculateAll(state.inputs, { suburb: currentSuburb() });
@@ -1392,6 +1494,7 @@
     renderExit();
     renderBorrowing();
     if (state.compareData.length) renderCompare();
+    renderDecisionPanels();
   }
 
   // Warnings anchored to the input or section they concern. Anything that
