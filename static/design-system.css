@@ -1762,3 +1762,151 @@ button.primary:hover,.section-page button.primary:hover { background:var(--pri-d
  .decision-stat-grid,#section-property .decision-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
  .decision-stat { padding:.55rem; }
 }
+
+
+/* ================================================================
+   MILESTONE 19 — cohesive redesign across every workflow
+   Visual-only: preserves existing field IDs, data bindings and actions.
+   ================================================================ */
+
+/* Give every analysis page a clear editorial opening and consistent rhythm. */
+.section-page:not(#section-overview) { padding-top:.2rem; }
+.section-page:not(#section-overview) .page-intro {
+  position:relative;isolation:isolate;overflow:hidden;
+  padding:1.35rem 1.5rem 1.25rem;margin:.15rem 0 1.05rem;
+  border:1px solid var(--bd);border-radius:1.05rem;
+  background:linear-gradient(112deg,color-mix(in srgb,var(--pri-soft) 72%,var(--card)),var(--card) 72%);
+  box-shadow:var(--shadow);
+}
+.section-page:not(#section-overview) .page-intro::after {
+  content:"";position:absolute;z-index:-1;width:13rem;height:13rem;right:-3rem;top:-8rem;
+  border:1px solid color-mix(in srgb,var(--pri) 13%,transparent);border-radius:50%;
+  box-shadow:0 0 0 1.6rem color-mix(in srgb,var(--pri) 3%,transparent),0 0 0 3.2rem color-mix(in srgb,var(--pri) 2%,transparent);
+}
+.section-page .page-intro-copy { max-width:70rem; }
+.section-page .page-eyebrow { display:inline-flex;align-items:center;gap:.4rem;margin-bottom:.35rem; }
+.section-page .page-title { font-size:clamp(1.55rem,2.2vw,2rem); }
+.section-page .page-description { max-width:58rem;font-size:.8rem; }
+.section-page .section { position:relative; }
+.section-page .section > h2 { display:flex;align-items:center;gap:.55rem;margin-bottom:.45rem; }
+.section-page .section > h2::before {
+  content:"";width:3px;height:1rem;flex:none;border-radius:4px;background:var(--pri);opacity:.8;
+}
+
+/* Inputs: distinguish shared portfolio settings, home finance and each IP. */
+#section-inputs .input-guide {
+  margin:.2rem 0 .9rem;padding:.7rem .9rem;border:1px solid var(--bd);
+  border-radius:.8rem;background:var(--card);box-shadow:var(--shadow);
+}
+#section-inputs .prop-tabs {
+  position:sticky;top:calc(4.55rem + 3.7rem + .5rem);z-index:5;
+  display:flex;gap:.35rem;overflow-x:auto;margin:0 0 .8rem;padding:.4rem;
+  border:1px solid var(--bd);background:color-mix(in srgb,var(--card) 94%,transparent);
+  backdrop-filter:blur(14px);box-shadow:var(--shadow);
+}
+#section-inputs .prop-tabs button { flex:none;min-height:2.45rem;padding:.55rem .9rem;white-space:nowrap; }
+#section-inputs .prop-page > .section { padding:1.25rem 1.35rem; }
+#section-inputs .prop-page > .section > .hint { max-width:66rem;margin-bottom:1rem; }
+#section-inputs .grid-form { grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem 1.2rem; }
+#section-inputs .field { min-width:0; }
+#section-inputs .field label { display:flex;align-items:baseline;justify-content:space-between;gap:.5rem;min-height:1.35rem; }
+#section-inputs .field .unit { color:var(--muted);font-size:.64rem;font-weight:550; }
+#section-inputs .masked-wrap { min-width:0; }
+#section-inputs details.advanced { margin-top:.7rem; }
+#section-inputs details.advanced > summary { display:flex;align-items:center;gap:.6rem; }
+#section-inputs details.advanced[open] { padding-bottom:.85rem; }
+#section-inputs details.advanced[open] > .grid-form { padding:0 1rem; }
+#section-inputs .source-note { margin-top:.65rem;padding:.55rem .7rem;border-left:2px solid var(--pri);background:var(--bg-accent);border-radius:0 .45rem .45rem 0; }
+@media(max-width:1000px) { #section-inputs .grid-form { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:600px) {
+  #section-inputs .grid-form { grid-template-columns:1fr; }
+  #section-inputs .prop-tabs { top:.4rem; }
+  #section-inputs .prop-page > .section { padding:.95rem; }
+}
+
+/* Property intelligence: make the map the hero, with controls easy to scan. */
+#section-property .prop-map-wrap {
+  overflow:hidden;border:1px solid var(--bd);border-radius:.9rem;background:var(--bg);
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.025);
+}
+#section-property #property-map { min-height:430px;border-radius:.85rem; }
+#section-property .prop-map-controls {
+  display:flex;align-items:center;justify-content:space-between;gap:.65rem;flex-wrap:wrap;
+  padding:.7rem .8rem;border-top:1px solid var(--bd);background:var(--card);
+}
+#section-property .prop-ctl-group { display:flex;gap:.35rem;flex-wrap:wrap; }
+#section-property .prop-map-controls .chip {
+  min-height:2.1rem;padding:.4rem .7rem;border:1px solid var(--bd);border-radius:999px;
+  background:var(--bg);color:var(--muted);font-size:.68rem;
+}
+#section-property .prop-map-controls .chip.active {
+  border-color:color-mix(in srgb,var(--pri) 45%,var(--bd));background:var(--pri-soft);color:var(--pri);
+}
+#section-property .prop-map-status { padding:.6rem .85rem;border-top:1px solid var(--bd);font-size:.68rem; }
+#section-property #property-cards { grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem; }
+#section-property #property-details { margin-top:.8rem; }
+@media(max-width:760px) {
+  #section-property #property-map { min-height:300px; }
+  #section-property #property-cards { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+
+/* Area research: metrics first, evidence and score after. */
+#section-area #area-cards { grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem; }
+#section-area #area-cards .card { min-width:0;padding:.9rem 1rem; }
+#section-area #area-cards .card .value { font-size:clamp(1.05rem,1.4vw,1.45rem); }
+#section-area #score-panel { border-radius:.9rem; }
+#section-area #score-table,#section-area #comp-table,#section-area #rates-table {
+  width:100%;border-collapse:separate;border-spacing:0;
+}
+#section-area .risk-checklist,#section-area .risk-grid { gap:.6rem; }
+#section-area .source-note { margin-top:.45rem; }
+@media(max-width:1050px) { #section-area #area-cards { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:520px) { #section-area #area-cards { grid-template-columns:1fr 1fr; } }
+
+/* Cash flow, projections and exit: financial numbers align and tables read cleanly. */
+#section-cashflow .analytics-insight,#section-projections .analytics-insight,
+#section-exit .analytics-insight,#section-borrowing .analytics-insight {
+  margin:.15rem 0 1rem;padding:.9rem 1rem;border:1px solid var(--bd);
+  border-radius:.9rem;background:linear-gradient(110deg,var(--bg-accent),var(--card) 75%);
+}
+#section-cashflow .analytics-insight,
+#section-projections .analytics-insight,
+#section-exit .analytics-insight,
+#section-borrowing .analytics-insight { box-shadow:var(--shadow); }
+#section-cashflow .chart-row,#section-projections .chart-row,#section-exit .chart-row { align-items:stretch; }
+#section-cashflow .table-wrap,#section-projections .table-wrap,#section-exit .table-wrap { margin-top:.7rem; }
+#section-cashflow table td:not(:first-child),
+#section-projections table td:not(:first-child),
+#section-exit table td:not(:first-child) {
+  text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+#section-projections table,#section-exit table { min-width:760px; }
+#section-borrowing #borrowing-cards { grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem; }
+#section-borrowing #borrowing-cards .card { min-width:0; }
+@media(max-width:800px) { #section-borrowing #borrowing-cards { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* Scenarios and workspace: make saved work feel like a managed portfolio. */
+#section-scenarios .scenario-list,#section-scenarios .scenario-grid { gap:.75rem; }
+#section-scenarios .scenario-card,#section-scenarios .scenario-row {
+  border:1px solid var(--bd);border-radius:.85rem;background:var(--card);box-shadow:var(--shadow);
+}
+#section-scenarios .scenario-card:hover,#section-scenarios .scenario-row:hover {
+  border-color:color-mix(in srgb,var(--pri) 35%,var(--bd));box-shadow:var(--shadow-lift);
+}
+#section-scenarios .table-wrap { margin-top:.6rem; }
+#section-actuals .section,#section-workspace .section { margin-bottom:.9rem; }
+#section-actuals input,#section-workspace input,#section-workspace select,
+#section-workspace textarea { max-width:100%; }
+#section-actuals .table-wrap,#section-workspace .table-wrap { margin-top:.6rem; }
+
+/* Keep the app polished at smaller sizes without squeezing financial tables. */
+@media(max-width:760px) {
+  .section-page:not(#section-overview) .page-intro { padding:1rem; }
+  .section-page:not(#section-overview) .page-intro::after { opacity:.5; }
+  .section-page .section { padding:.95rem; }
+  .section-page .chart-box { min-height:190px; }
+  #section-borrowing #borrowing-cards { grid-template-columns:1fr 1fr; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .section-page .card,.section-page button { transition:none!important; }
+}
