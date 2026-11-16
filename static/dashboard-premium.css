@@ -182,3 +182,83 @@ body.sidebar-collapsed .main { width:calc(100% - var(--app-sidebar-compact,4.7re
   #section-overview .dashboard-hero-stat { padding:.5rem .4rem; }
   #section-overview .dash-title { font-size:1.45rem; }
 }
+
+/* Definitive desktop override: flex layout avoids inherited grid/breakpoint collisions. */
+@media (min-width: 1100px) {
+  .layout { width:100%; max-width:none; }
+  .main {
+    width:100% !important;
+    max-width:none !important;
+    flex:1 1 auto !important;
+    align-self:stretch !important;
+    margin:0 !important;
+  }
+  #section-overview.dashboard-v2 {
+    display:block;
+    width:100% !important;
+    max-width:none !important;
+    margin:0 !important;
+  }
+  #section-overview .dash-head.dashboard-v2-head {
+    display:flex !important;
+    flex-flow:row nowrap !important;
+    align-items:center !important;
+    justify-content:space-between !important;
+    gap:1rem !important;
+    width:100% !important;
+    min-width:0 !important;
+    padding:1.05rem 1.15rem !important;
+  }
+  #section-overview .dash-heading-copy {
+    flex:0 1 25% !important;
+    width:25% !important;
+    max-width:25% !important;
+    min-width:190px !important;
+  }
+  #section-overview .dash-title { font-size:clamp(1.25rem,1.55vw,1.85rem) !important; }
+  #section-overview .dash-sub { font-size:.7rem !important; }
+  #section-overview .dashboard-hero-metrics {
+    display:grid !important;
+    flex:1 1 0 !important;
+    width:auto !important;
+    min-width:0 !important;
+    grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+    gap:.38rem !important;
+    margin:0 !important;
+  }
+  #section-overview .dashboard-hero-stat {
+    min-width:0 !important;
+    min-height:5rem !important;
+    padding:.55rem .48rem !important;
+  }
+  #section-overview .dashboard-hero-stat span { font-size:.51rem !important; }
+  #section-overview .dashboard-hero-stat strong { font-size:clamp(.8rem,.95vw,1.08rem) !important; }
+  #section-overview .dashboard-hero-stat small { font-size:.48rem !important; }
+  #section-overview .dash-actions {
+    display:flex !important;
+    flex:0 0 175px !important;
+    width:175px !important;
+    min-width:175px !important;
+    flex-flow:column nowrap !important;
+    align-items:stretch !important;
+    justify-content:center !important;
+    gap:.32rem !important;
+    margin:0 !important;
+    padding:0 0 0 .75rem !important;
+    border:0 !important;
+    border-left:1px solid rgba(255,255,255,.2) !important;
+  }
+  #section-overview .dash-actions .snapshot-context { margin:0 0 .1rem !important; }
+  #section-overview .dash-actions button {
+    width:100% !important;
+    min-height:1.8rem !important;
+    padding:.3rem .45rem !important;
+    font-size:.61rem !important;
+    white-space:nowrap !important;
+  }
+}
+@media (min-width:1100px) and (max-width:1350px) {
+  #section-overview .dash-heading-copy { flex-basis:21% !important; width:21% !important; max-width:21% !important; min-width:165px !important; }
+  #section-overview .dash-actions { flex-basis:150px !important; width:150px !important; min-width:150px !important; }
+  #section-overview .dash-title { font-size:1.25rem !important; }
+}
