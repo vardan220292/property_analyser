@@ -2233,3 +2233,23 @@ body { background:linear-gradient(135deg,rgba(40,116,208,.045),transparent 34%),
 :root[data-theme="dark"] .analytics-takeaway strong { color:var(--txt); }
 @media(max-width:1050px) { .analytics-insight-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:600px) { .analytics-insight-grid { grid-template-columns:1fr 1fr; } }
+
+
+/* Milestone 2 follow-through: win the cascade over earlier theme layers. */
+.section-page:not(#section-overview) .page-intro {
+  background:linear-gradient(112deg,#101f35 0%,#213d61 58%,#176f78 100%) !important;
+  border-color:rgba(40,116,208,.25); color:#fff; box-shadow:0 14px 34px rgba(16,31,53,.16);
+}
+.section-page:not(#section-overview) .page-intro .page-title { color:#fff !important; }
+.section-page:not(#section-overview) .page-intro .page-description { color:rgba(242,248,255,.8) !important; }
+.section-page:not(#section-overview) .page-intro .page-eyebrow { color:#83ded2 !important; }
+.dashboard-v2 .dash-head { background:linear-gradient(112deg,#101f35 0%,#213d61 58%,#176f78 100%) !important; }
+#section-property .prop-map-wrap.is-unlocated #property-map { min-height:120px !important; height:120px !important; }
+#section-property .prop-map-wrap.is-unlocated .prop-map-controls { display:none; }
+#section-property .prop-map-wrap.is-unlocated { background:var(--teal-100); border-style:dashed; }
+#section-property .prop-map-wrap.is-unlocated .prop-map-status { padding:18px 20px; color:#155e59; font-weight:650; }
+#section-property .prop-map-wrap.is-unlocated #property-map { display:none; }
+#section-scenarios .chart-box.is-empty { display:grid; place-items:center; min-height:180px; border:1px dashed var(--bd-strong); border-radius:14px; background:var(--bg); }
+#section-scenarios .chart-box.is-empty:after { content:"Select up to 3 saved scenarios above to compare these results."; max-width:260px; text-align:center; color:var(--muted); font-size:.85rem; line-height:1.5; }
+#section-overview .portfolio-kpi-grid:empty:after { content:"Calculating your current scenario…"; color:var(--muted); padding:18px; }
+#section-overview .portfolio-performance:empty:after { content:"Property performance will appear when the scenario is calculated."; color:var(--muted); }
