@@ -262,3 +262,87 @@ body.sidebar-collapsed .main { width:calc(100% - var(--app-sidebar-compact,4.7re
   #section-overview .dash-actions { flex-basis:150px !important; width:150px !important; min-width:150px !important; }
   #section-overview .dash-title { font-size:1.25rem !important; }
 }
+
+/* Final viewport-aware override: the app can run in a high-DPI browser where CSS
+   viewport width is below 1100px even on a wide physical monitor. */
+@media (min-width: 700px) {
+  .main {
+    width:100% !important;
+    max-width:none !important;
+    padding-left:clamp(.75rem,1.5vw,1.5rem) !important;
+    padding-right:clamp(.75rem,1.5vw,1.5rem) !important;
+  }
+  #section-overview.dashboard-v2 {
+    display:block !important;
+    width:100% !important;
+    max-width:none !important;
+    margin-inline:0 !important;
+    padding-inline:0 !important;
+  }
+  #section-overview .dash-head.dashboard-v2-head {
+    display:flex !important;
+    flex-direction:row !important;
+    flex-wrap:nowrap !important;
+    align-items:center !important;
+    justify-content:space-between !important;
+    width:100% !important;
+    max-width:none !important;
+    gap:.55rem !important;
+    padding:.85rem !important;
+  }
+  #section-overview .dash-heading-copy {
+    flex:0 1 22% !important;
+    width:22% !important;
+    max-width:22% !important;
+    min-width:130px !important;
+  }
+  #section-overview .dash-title {
+    font-size:clamp(1.05rem,1.65vw,1.75rem) !important;
+    line-height:1.1 !important;
+  }
+  #section-overview .dash-sub { font-size:.62rem !important; }
+  #section-overview .dashboard-hero-metrics {
+    display:grid !important;
+    flex:1 1 auto !important;
+    width:auto !important;
+    min-width:0 !important;
+    grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+    gap:.25rem !important;
+    margin:0 !important;
+  }
+  #section-overview .dashboard-hero-stat {
+    min-width:0 !important;
+    min-height:4.25rem !important;
+    padding:.42rem .32rem !important;
+  }
+  #section-overview .dashboard-hero-stat span { font-size:.45rem !important; }
+  #section-overview .dashboard-hero-stat strong { font-size:clamp(.7rem,.9vw,.98rem) !important; }
+  #section-overview .dashboard-hero-stat small { display:none !important; }
+  #section-overview .dash-actions {
+    display:flex !important;
+    flex:0 0 126px !important;
+    width:126px !important;
+    min-width:126px !important;
+    flex-direction:column !important;
+    gap:.22rem !important;
+    margin:0 !important;
+    padding:0 0 0 .45rem !important;
+    border:0 !important;
+    border-left:1px solid rgba(255,255,255,.2) !important;
+  }
+  #section-overview .dash-actions .snapshot-context { display:none !important; }
+  #section-overview .dash-actions button {
+    width:100% !important;
+    min-height:1.55rem !important;
+    padding:.2rem .28rem !important;
+    font-size:.52rem !important;
+    white-space:nowrap !important;
+  }
+}
+@media (min-width:700px) and (max-width:900px) {
+  #section-overview .dash-heading-copy { flex-basis:18% !important; width:18% !important; max-width:18% !important; min-width:110px !important; }
+  #section-overview .dash-actions { flex-basis:108px !important; width:108px !important; min-width:108px !important; }
+  #section-overview .dash-title { font-size:1rem !important; }
+  #section-overview .dashboard-hero-stat span { font-size:.4rem !important; }
+  #section-overview .dashboard-hero-stat strong { font-size:.67rem !important; }
+}
