@@ -538,6 +538,9 @@
     if (a.dataset.target === 'actuals') renderActuals();
     if (a.dataset.target === 'property') renderProperty();
     if (a.dataset.target === 'overview') loadDashboard();
+    // Start each workflow at its page heading instead of retaining the
+    // previous section's scroll position.
+    window.scrollTo(0, 0);
   });
 
   // ------------------------------------------------------------------
