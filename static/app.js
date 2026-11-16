@@ -1149,6 +1149,11 @@
       const add = $(selector);
       if (add) add.addEventListener('click', openInputs);
     });
+    const propertyIntelBtn = $('#dash-property-intel');
+    if (propertyIntelBtn) propertyIntelBtn.addEventListener('click', () => {
+      const a = document.querySelector('#nav a[data-target="property"]');
+      if (a) a.click();
+    });
     const scenarios = $('#dash-scenarios');
     if (scenarios) scenarios.addEventListener('click', () => {
       const a = document.querySelector('#nav a[data-target="scenarios"]');
@@ -1291,6 +1296,10 @@
   }
 
   function renderVicIntel(d) {
+    ['#prop-ov-bushfire', '#prop-ov-flood', '#prop-base-topo'].forEach((sel) => {
+      const el = $(sel);
+      if (el) el.classList.add('hidden');
+    });
     const p = d.parcel || {};
     const area = p.areaSqm ? fmtNum(p.areaSqm) + ' m²' : 'Not available';
     $('#property-cards').innerHTML = [
@@ -1319,6 +1328,10 @@
   }
 
   function renderIntel(d) {
+    ['#prop-ov-bushfire', '#prop-ov-flood', '#prop-base-topo'].forEach((sel) => {
+      const el = $(sel);
+      if (el) el.classList.remove('hidden');
+    });
     if (d && d.jurisdiction === 'VIC') { renderVicIntel(d); return; }
     const p = d.parcel || {};
     const lu = d.landUse || {};
