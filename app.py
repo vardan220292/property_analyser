@@ -40,6 +40,7 @@ import presentations
 import actuals
 import branding
 import qld_intel
+import vic_intel
 import ratelimit
 import scenarios
 import seeds
@@ -128,6 +129,7 @@ app.register_blueprint(portal.bp)
 app.register_blueprint(presentations.bp)
 app.register_blueprint(presentations.clients_bp)
 app.register_blueprint(qld_intel.bp)
+app.register_blueprint(vic_intel.bp)
 app.register_blueprint(scenarios.bp)
 
 
