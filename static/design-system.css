@@ -7,31 +7,31 @@
 
 :root {
   /* Brand and semantic palette */
-  --bg: #f5f7fb;
-  --bg-accent: rgba(37, 99, 235, 0.045);
+  --bg: #f4f7f6;
+  --bg-accent: rgba(15, 118, 110, 0.055);
   --card: #ffffff;
-  --txt: #172033;
-  --muted: #68758b;
-  --pri: #2563eb;
-  --pri-2: #3b82f6;
-  --pri-dark: #1d4ed8;
-  --pri-soft: rgba(37, 99, 235, 0.085);
+  --txt: #172a2b;
+  --muted: #647779;
+  --pri: #0f766e;
+  --pri-2: #14b8a6;
+  --pri-dark: #115e59;
+  --pri-soft: rgba(15, 118, 110, 0.09);
   --good: #15803d;
   --bad: #dc2626;
   --amber: #b7791f;
   --warn-bg: #fff7e6;
   --warn-bd: #e8b44f;
-  --bd: #e5eaf2;
-  --bd-strong: #cbd5e1;
-  --hover: #f1f5fb;
-  --sidebar-top: #101b32;
-  --sidebar-bot: #172744;
-  --sidebar-txt: #a9b8d0;
+  --bd: #e1e9e6;
+  --bd-strong: #c3d2ce;
+  --hover: #edf4f2;
+  --sidebar-top: #102c35;
+  --sidebar-bot: #17434a;
+  --sidebar-txt: #b4ceca;
   --shadow: 0 1px 2px rgba(16, 32, 58, 0.035), 0 5px 18px rgba(16, 32, 58, 0.045);
   --shadow-lift: 0 8px 28px rgba(16, 32, 58, 0.12);
-  --ring: 0 0 0 3px rgba(37, 99, 235, 0.19);
-  --chart-grid: rgba(23, 32, 51, 0.075);
-  --chart-tick: #68758b;
+  --ring: 0 0 0 3px rgba(15, 118, 110, 0.2);
+  --chart-grid: rgba(23, 42, 43, 0.075);
+  --chart-tick: #647779;
 
   /* Consistent design primitives */
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
@@ -50,31 +50,31 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #0d1422;
-  --bg-accent: rgba(59, 130, 246, 0.09);
-  --card: #151f30;
-  --txt: #e7edf6;
-  --muted: #9aa9bd;
-  --pri: #75a7ff;
-  --pri-2: #4f8df5;
-  --pri-dark: #3b82f6;
-  --pri-soft: rgba(96, 155, 255, 0.13);
+  --bg: #101a20;
+  --bg-accent: rgba(45, 212, 191, 0.08);
+  --card: #17262b;
+  --txt: #e6f0ee;
+  --muted: #a2b8b4;
+  --pri: #5eead4;
+  --pri-2: #2dd4bf;
+  --pri-dark: #0f766e;
+  --pri-soft: rgba(45, 212, 191, 0.13);
   --good: #4ade80;
   --bad: #fb7185;
   --amber: #fbbf24;
   --warn-bg: rgba(245, 158, 11, 0.11);
   --warn-bd: rgba(245, 158, 11, 0.42);
-  --bd: #28364b;
-  --bd-strong: #3b4b63;
-  --hover: #1b2a40;
-  --sidebar-top: #091321;
-  --sidebar-bot: #101d30;
-  --sidebar-txt: #9aacc5;
+  --bd: #2b4144;
+  --bd-strong: #42605e;
+  --hover: #20383a;
+  --sidebar-top: #0b2027;
+  --sidebar-bot: #12343a;
+  --sidebar-txt: #a5c4bf;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 5px 18px rgba(0, 0, 0, 0.12);
   --shadow-lift: 0 8px 28px rgba(0, 0, 0, 0.32);
-  --ring: 0 0 0 3px rgba(117, 167, 255, 0.25);
-  --chart-grid: rgba(203, 213, 225, 0.10);
-  --chart-tick: #9aa9bd;
+  --ring: 0 0 0 3px rgba(94, 234, 212, 0.25);
+  --chart-grid: rgba(203, 231, 225, 0.10);
+  --chart-tick: #a2b8b4;
   color-scheme: dark;
 }
 
@@ -1909,4 +1909,104 @@ button.primary:hover,.section-page button.primary:hover { background:var(--pri-d
 }
 @media(prefers-reduced-motion:reduce) {
   .section-page .card,.section-page button { transition:none!important; }
+}
+
+
+/* ================================================================
+   MILESTONE 1 — premium property-finance foundation
+   Visual-only layer: no selectors alter form values or app behaviour.
+   ================================================================ */
+:root {
+  --brand-ink: #12363b;
+  --brand-teal: #0f766e;
+  --brand-mint: #dff4ef;
+  --surface-raised: color-mix(in srgb, var(--card) 96%, var(--bg));
+  --surface-subtle: color-mix(in srgb, var(--bg) 72%, var(--card));
+  --text-strong: var(--txt);
+  --border-soft: color-mix(in srgb, var(--bd) 82%, transparent);
+}
+
+body {
+  background-image:
+    radial-gradient(900px 420px at 92% -12%, color-mix(in srgb, var(--pri) 6%, transparent), transparent 68%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, var(--card)), var(--bg));
+}
+
+.navbar {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.brand-mark {
+  background: linear-gradient(145deg, var(--pri-dark), var(--pri-2));
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--pri) 18%, transparent);
+}
+
+.brand-text b,
+.navbar nav a.active {
+  color: var(--pri);
+}
+
+.section,
+.card,
+.page-intro,
+.analytics-insight {
+  border-color: var(--border-soft);
+}
+
+.section h2,
+.section-page .page-title,
+.dashboard-v2 .dash-title {
+  color: var(--text-strong);
+}
+
+.section .hint,
+.page-description {
+  color: var(--muted);
+}
+
+.section-page .page-intro {
+  background:
+    linear-gradient(112deg, color-mix(in srgb, var(--pri-soft) 76%, var(--card)), var(--card) 74%);
+}
+
+.section-page .section {
+  background: var(--card);
+}
+
+.section-page .table-wrap {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.section-page table th {
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 750;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.section-page table td {
+  border-color: var(--border-soft);
+}
+
+.section-page input:focus-visible,
+.section-page select:focus-visible,
+.section-page textarea:focus-visible,
+.section-page button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+@media (max-width: 760px) {
+  .navbar { padding-inline: .85rem; }
+  .subbar { padding-inline: .85rem; }
+  .main { padding-inline: .8rem; }
+  .section-page .page-intro { border-radius: .85rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
 }
