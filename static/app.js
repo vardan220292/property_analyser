@@ -974,11 +974,11 @@
     } else {
       add('Property parcel', 'Address needed', 'Add and locate an investment property');
     }
-    if (suburb.medianPrice != null) add('Suburb median sale', fmtMoney(suburb.medianPrice), 'Saved suburb reference data');
-    if (suburb.medianRent3Bed != null) add('3-bed median rent', fmtMoney(suburb.medianRent3Bed) + '/wk', 'Saved suburb reference data');
-    if (suburb.medianRent4Bed != null) add('4-bed median rent', fmtMoney(suburb.medianRent4Bed) + '/wk', 'Saved suburb reference data');
-    if (suburb.vacancyPct != null) add('Vacancy rate', Number(suburb.vacancyPct).toFixed(1) + '%', 'Saved suburb reference data');
-    if (suburb.growth5yrPct != null) add('5-year price growth', Number(suburb.growth5yrPct).toFixed(1) + '%', 'Saved suburb reference data');
+    if (suburb.medianPrice != null) add('Suburb median sale', fmtMoney(suburb.medianPrice), sourceNote(suburb, 'medianPrice') || 'Saved suburb reference data');
+    if (suburb.medianRent3Bed != null) add('3-bed median rent', fmtMoney(suburb.medianRent3Bed) + '/wk', sourceNote(suburb, 'medianRent3Bed') || 'Saved suburb reference data');
+    if (suburb.medianRent4Bed != null) add('4-bed median rent', fmtMoney(suburb.medianRent4Bed) + '/wk', sourceNote(suburb, 'medianRent4Bed') || 'Saved suburb reference data');
+    if (suburb.vacancyPct != null) add('Vacancy rate', Number(suburb.vacancyPct).toFixed(1) + '%', sourceNote(suburb, 'vacancyPct') || 'Saved suburb reference data');
+    if (suburb.growth5yrPct != null) add('5-year price growth', Number(suburb.growth5yrPct).toFixed(1) + '%', sourceNote(suburb, 'growth5yrPct') || 'Saved suburb reference data');
     if (cards.length === 0) {
       root.innerHTML = '<div class="empty-note">No property or suburb intelligence is available yet. Add a located address and suburb market data.</div>';
       return;
