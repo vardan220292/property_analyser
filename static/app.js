@@ -1108,6 +1108,8 @@
     const lat = numOrNull(meta.lat);
     const lon = numOrNull(meta.lon);
 
+    const mapWrap = $('#section-property .prop-map-wrap');
+    if (mapWrap) mapWrap.classList.toggle('is-unlocated', lat === null || lon === null);
     if (lat === null || lon === null) {
       setPropertyStatus(p.address
         ? 'No map coordinates for this address — pick it from the dropdown in Inputs (or type the full address and click away) so we can locate the parcel.'
@@ -1490,6 +1492,7 @@
     }
     renderRateFoot();
     renderWarnings();
+    renderPortfolioSnapshot();
     renderOverview();
     renderArea();
     renderCashFlow();
@@ -2183,6 +2186,32 @@
       ${line('Total net position', x.totalNetPosition, true)}
       </tbody>`;
     $('#exit-note').textContent = x.warnings[0] || '';
+
+    // Dedicated sale-proceeds chart on the Exit page (kept separate from
+    // the dashboard's summary chart so it renders when this page is opened).
+    drawChart('chart-exit-waterfall', {
+      type: 'bar',
+      data: {
+        labels: ['Sale price', 'Selling costs', 'Capital gains tax', 'IP loan payout', 'Equity loan payout', 'Net sale proceeds'],
+        datasets: [{
+          label: 'Estimated amount',
+          data: [x.salePrice, -x.sellingCosts, -x.capitalGainsTax,
+            -x.ipLoanBalanceAtSale, -x.equityLoanBalanceAtSale, x.netSaleProceeds],
+          backgroundColor: [COLORS.pri, COLORS.red, COLORS.amber, COLORS.red, COLORS.red, COLORS.green],
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        ...baseOpts((v) => (v < 0 ? '−' : '') + fmtMoney(Math.abs(v), 0)),
+        indexAxis: 'y',
+        plugins: { ...baseOpts().plugins, legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => ' ' + signed(ctx.parsed.x) } } },
+        scales: {
+          x: { ticks: { color: cssVar('--chart-tick') || '#64748b', callback: (v) => (v < 0 ? '−' : '') + fmtMoney(Math.abs(v), 0) }, grid: { color: cssVar('--chart-grid') || 'rgba(15, 23, 42, 0.08)' } },
+          y: { ticks: { color: cssVar('--chart-tick') || '#64748b' }, grid: { display: false } },
+        },
+      },
+    });
   }
 
   // ------------------------------------------------------------------
