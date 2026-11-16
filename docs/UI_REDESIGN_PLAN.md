@@ -45,6 +45,13 @@ The product should feel like a professional property-investment decision workspa
 | Actuals | Simple actuals entry plus actual-versus-projected performance, with a helpful first-entry state. |
 | Client Workspace | Client-centred overview, status and property list while preserving existing client/branding actions and permissions. |
 
+## Current implementation status (16 Nov 2026)
+
+- Shared visual foundation: implemented; final responsive/accessibility regression pending.
+- Dashboard: first pass implemented; executive-style visual refinement added; final screenshot review pending.
+- Remaining page redesigns: shared page-level styling pass applied; page-specific visual review and refinements pending.
+- Full validation: not yet completed. Do not treat the redesign as release-ready until all 11 sections pass the validation checklist below.
+
 ## Delivery milestones
 1. Shared visual foundation: tokens, typography, navigation, page rhythm, responsive behaviour and reusable empty-state patterns.
 2. Dashboard.
