@@ -15,6 +15,7 @@
       }
     } catch (e) {}
   </script>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%23102f3a%27/%3E%3Ctext x=%2732%27 y=%2742%27 text-anchor=%27middle%27 font-family=%27Arial%27 font-size=%2728%27 font-weight=%27bold%27 fill=%27white%27%3ERV%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/design-system.css">
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
@@ -24,7 +25,7 @@
     <header class="navbar">
       <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Toggle navigation" aria-expanded="true" title="Collapse navigation"><span></span><span></span><span></span></button>
       <a class="navbar-brand" href="/">
-        <img class="brand-logo" src="/rv-enterprise-mark.svg" alt="RV Enterprise logo">
+        <span class="brand-logo brand-logo-fallback" aria-label="RV Enterprise">RV</span>
         <span class="brand-text">Property<b>Analyser</b></span>
       </a>
 
