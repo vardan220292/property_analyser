@@ -1834,6 +1834,42 @@
     const exitLabels = ['Sale price', 'Selling costs', 'CGT', 'IP loan payout', 'Equity loan payout', 'Cash received'];
     const exitValues = [x.salePrice, -x.sellingCosts, -x.capitalGainsTax,
       -x.ipLoanBalanceAtSale, -x.equityLoanBalanceAtSale, x.netSaleProceeds];
+    const allocationProps = (state.result.properties || []).map((p, i) => ({
+      label: ipLabel(p, i),
+      value: Number((p.metrics || {}).purchasePrice || 0),
+    })).filter((p) => p.value > 0);
+    const allocationCanvas = document.getElementById('chart-ov-allocation');
+    if (allocationCanvas) {
+      if (allocationProps.length) {
+        drawChart('chart-ov-allocation', {
+          type: 'doughnut',
+          data: {
+            labels: allocationProps.map((p) => p.label),
+            datasets: [{
+              label: 'Purchase value',
+              data: allocationProps.map((p) => p.value),
+              backgroundColor: ['#2874d0', '#0f9b8e', '#805ad5', '#e5a12b', '#df6672', '#3b9b72'],
+              borderColor: cssVar('--card') || '#ffffff',
+              borderWidth: 3,
+              hoverOffset: 8,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '62%',
+            plugins: {
+              legend: { position: 'bottom', labels: { color: cssVar('--chart-tick') || '#64748b', usePointStyle: true, padding: 14 } },
+              tooltip: { callbacks: { label: (ctx) => ' ' + ctx.label + ': ' + fmtMoney(ctx.parsed) } },
+            },
+          },
+        });
+      } else {
+        if (charts['chart-ov-allocation']) { charts['chart-ov-allocation'].destroy(); delete charts['chart-ov-allocation']; }
+        const parent = allocationCanvas.closest('.chart-box');
+        if (parent) parent.classList.add('is-empty');
+      }
+    }
     drawChart('chart-ov-cum', {
       type: 'bar',
       data: {
