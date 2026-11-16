@@ -1196,9 +1196,10 @@
       return;
     }
 
-    setPropertyStatus('Loading live Queensland data…');
+    const isVic = String(meta.state || state.inputs.state || '').toUpperCase() === 'VIC';
+    setPropertyStatus(isVic ? 'Loading Victorian Government property data…' : 'Loading live Queensland data…');
     const seq = ++intel.seq;
-    api('/api/intel/property?lat=' + lat + '&lon=' + lon)
+    api((isVic ? '/api/intel/vic-property' : '/api/intel/property') + '?lat=' + lat + '&lon=' + lon)
       .then((d) => {
         if (seq !== intel.seq) return;
         const keys = Object.keys(intel.cache);
@@ -1227,7 +1228,36 @@
     return card(label, escapeHtml(value), sub ? escapeHtml(sub) : '', cls);
   }
 
+  function renderVicIntel(d) {
+    const p = d.parcel || {};
+    const area = p.areaSqm ? fmtNum(p.areaSqm) + ' m²' : 'Not available';
+    $('#property-cards').innerHTML = [
+      intelCard('Land parcel area', area, 'Vicmap cadastral polygon area'),
+      intelCard('Property reference', p.propertyReference || 'Not found', 'Vicmap property feature identifier'),
+      intelCard('Council reference', p.propertyNumber || '—', p.councilCode ? 'Council code ' + p.councilCode : ''),
+      intelCard('Property type code', p.propertyTypeCode || '—', 'Raw Vicmap classification code'),
+      intelCard('Multi-assessment', p.multiAssessment || '—', 'Vicmap property attribute'),
+      intelCard('Parcel status', p.statusCode || '—', 'Vicmap status code'),
+    ].join('');
+    const rows = [];
+    const row = (k, v) => { if (v !== null && v !== undefined && v !== '') rows.push('<div class="k">' + escapeHtml(k) + '</div><div class="v">' + escapeHtml(String(v)) + '</div>'); };
+    row('Property reference (PFI)', p.propertyReference);
+    row('Property unique feature identifier', p.propertyUfi);
+    row('Council property number', p.propertyNumber);
+    row('Council code', p.councilCode);
+    row('Property type code', p.propertyTypeCode);
+    row('Multi-assessment flag', p.multiAssessment);
+    row('Status code', p.statusCode);
+    row('Parcel area', p.areaSqm == null ? null : fmtNum(p.areaSqm) + ' m²');
+    $('#property-details').innerHTML = rows.length ? '<div class="kv">' + rows.join('') + '</div>' : '<div class="empty-note">No parcel attributes were returned for this point.</div>';
+    const shown = state.inputs.properties[activePropertyIndex()] || {};
+    setPropertyStatus((shown.address ? shown.address + ' · ' : '') + 'Vicmap Property · CC BY 4.0 · fetched ' + String(d.fetchedAt || '').replace('T', ' ').slice(0, 16) + (p.propertyReference ? '' : ' · no parcel match at this coordinate'));
+    $('#property-sources').innerHTML = 'Source: ' + (d.sources || []).map((s) => '<a href="' + escapeHtml(s.url) + '" target="_blank" rel="noopener">' + escapeHtml(s.label) + '</a> · ' + escapeHtml(s.licence || '')).join(' · ');
+    renderIntelMap(d);
+  }
+
   function renderIntel(d) {
+    if (d && d.jurisdiction === 'VIC') { renderVicIntel(d); return; }
     const p = d.parcel || {};
     const lu = d.landUse || {};
     const rp = d.regionalPlan || {};
