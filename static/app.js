@@ -1987,7 +1987,8 @@
     const t = $('#overview-props');
     if (!t) return;
     const props = state.result.properties || [];
-    if (!props.length) { t.innerHTML = ''; return; }
+    const pporValue = Number(state.inputs.pporValue) || 0;
+    if (!props.length && pporValue <= 0) { t.innerHTML = ''; return; }
     t.innerHTML = `
       <thead><tr><th>Property</th><th>Price</th><th>Rent (wk)</th><th>Loan / LVR</th>
       <th>Yr-1 out-of-pocket (wk)</th><th>10-yr equity</th><th>IRR</th><th>Score</th><th>Sells</th></tr></thead><tbody>
@@ -2008,6 +2009,7 @@
           <td>Y${m.saleYear}</td>
         </tr>`;
       }).join('')}
+      ${pporValue > 0 ? `<tr class="portfolio-ppor-row"><td>PPOR · Home</td><td>${fmtMoney(pporValue)}</td><td>—</td><td>${fmtMoney(Number(state.inputs.pporLoanBalance)||0)}</td><td>—</td><td>${fmtMoney(pporValue-(Number(state.inputs.pporLoanBalance)||0))}</td><td>—</td><td>Home</td><td>—</td></tr>` : ''}
       </tbody>`;
   }
 
