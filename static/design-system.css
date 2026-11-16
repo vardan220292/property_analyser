@@ -905,7 +905,15 @@ body.portal {
   background: color-mix(in srgb,var(--card) 92%,transparent);
   border-bottom: 1px solid var(--bd);
   backdrop-filter: blur(16px);
+  /* This layer turned the header light; the base layer (styles.css) paints
+     its text white — white on light was invisible. Follow the theme here. */
+  color: var(--txt);
 }
+.portal .portal-head .btn-ghost {
+  color: var(--txt);
+  border-color: var(--bd-strong);
+}
+.portal .portal-head .btn-ghost:hover { border-color: var(--pri); color: var(--pri); }
 .portal .portal-logo { border-radius: .7rem; background: #285a9f; }
 .portal .portal-main { max-width: 76rem; padding: 2rem clamp(1rem,3vw,2.5rem) 4rem; }
 .portal .portal-title-row { margin-bottom: 1rem; }
@@ -2705,8 +2713,8 @@ body { background:linear-gradient(135deg,rgba(40,116,208,.045),transparent 34%),
 }
 #section-overview .dashboard-hero-metrics {
   grid-column:1 / -1; grid-row:2;
-  display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
-  width:min(100%,850px); gap:.7rem; margin:0;
+  display:grid; grid-template-columns:repeat(5,minmax(0,1fr));
+  width:100%; gap:.7rem; margin:0;
 }
 #section-overview .dashboard-hero-stat {
   min-height:78px; justify-content:center; padding:.85rem 1rem;
@@ -2920,3 +2928,13 @@ body { background:linear-gradient(135deg,rgba(40,116,208,.045),transparent 34%),
 #section-overview .dashboard-data-footnote {
   margin-top:.8rem; color:var(--muted); font-size:.62rem; line-height:1.5;
 }
+
+/* Layout-width sync fix. Earlier layers set .main/.subbar to explicit
+   calc(100% - sidebar) widths while the sidebar breakpoint layers change
+   margin-left independently; between 761-900px the two disagreed and the
+   page overflowed horizontally by the sidebar width. Block auto-width
+   tracks margin-left exactly at every breakpoint and collapsed state. */
+.main,
+.subbar,
+body.sidebar-collapsed .main,
+body.sidebar-collapsed .subbar { width:auto; }

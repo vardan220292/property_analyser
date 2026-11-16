@@ -1,7 +1,13 @@
 /* Premium portfolio dashboard — cohesive layout and responsive hierarchy. */
 #section-overview.dashboard-v2 { width:100%; max-width:none; margin:0; padding:.2rem 0 2rem; --dash-line:#e3ebea; }
-.main { max-width:none; width:calc(100% - var(--app-sidebar-width,0px)); padding:1.1rem clamp(1.1rem,2vw,2rem) 2.5rem; }
-body.sidebar-collapsed .main { width:calc(100% - var(--app-sidebar-compact,4.7rem)); }
+:root[data-theme="dark"] #section-overview.dashboard-v2 { --dash-line:#2b454e; }
+
+/* Full-width workspace. Never set .main width or margin here — the fixed
+   sidebar offset (margin-left + collapsed/mobile variants) lives in
+   design-system.css and must keep applying, or content slides under the
+   sidebar and the page overflows. */
+.main { max-width:none; }
+
 #section-overview .dash-head.dashboard-v2-head { min-height:0; display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto; align-items:center; gap:1rem 1.5rem; margin:0 0 .85rem; padding:1.2rem 1.45rem; border:1px solid #dce8e7; border-radius:1rem; color:#183440; background:linear-gradient(115deg,#fff 0%,#f7fbfa 68%,#edf7f5 100%) !important; box-shadow:0 5px 20px rgba(24,52,64,.045); }
 #section-overview .dash-head.dashboard-v2-head::before,#section-overview .dash-head.dashboard-v2-head::after { display:none !important; }
 #section-overview .dash-heading-copy { max-width:42rem; }
@@ -24,9 +30,9 @@ body.sidebar-collapsed .main { width:calc(100% - var(--app-sidebar-compact,4.7re
 #section-overview .portfolio-snapshot .section-head-row h2 { color:#1b3540; font-size:.92rem; }
 #section-overview .portfolio-snapshot .hint { margin:.12rem 0 0; color:#7a898e; font-size:.63rem; }
 #section-overview .portfolio-kpi-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.55rem; }
-#section-overview .portfolio-kpi { min-width:0; min-height:5.2rem; padding:.65rem .72rem; border:1px solid #e5eceb !important; border-top:3px solid #a8c9c4 !important; border-radius:.65rem; background:#fbfdfc; box-shadow:none !important; }
+#section-overview .portfolio-kpi { min-width:0; min-height:5.2rem; padding:.75rem .85rem; border:1px solid #e5eceb !important; border-top:3px solid #a8c9c4 !important; border-radius:.65rem; background:#fbfdfc; box-shadow:none !important; }
 #section-overview .portfolio-kpi:nth-child(1) { border-top-color:#4386d6 !important; } #section-overview .portfolio-kpi:nth-child(2) { border-top-color:#7779d5 !important; } #section-overview .portfolio-kpi:nth-child(3) { border-top-color:#d79b3c !important; } #section-overview .portfolio-kpi:nth-child(4) { border-top-color:#0b8b7d !important; } #section-overview .portfolio-kpi:nth-child(5) { border-top-color:#2a9a70 !important; } #section-overview .portfolio-kpi:nth-child(6) { border-top-color:#347aaf !important; }
-#section-overview .portfolio-kpi-label { color:#718188; font-size:.57rem; letter-spacing:.04em; } #section-overview .portfolio-kpi-value { margin:.3rem 0 .15rem; color:#1b3540; font-size:clamp(.95rem,1.2vw,1.25rem); } #section-overview .portfolio-kpi-note { color:#859297; font-size:.56rem; }
+#section-overview .portfolio-kpi-label { color:#718188; font-size:.61rem; letter-spacing:.04em; } #section-overview .portfolio-kpi-value { margin:.3rem 0 .15rem; color:#1b3540; font-size:clamp(1.05rem,1.2vw,1.35rem); } #section-overview .portfolio-kpi-note { color:#859297; font-size:.6rem; }
 #section-overview .dashboard-property-showcase,#section-overview .dashboard-market-intelligence,#section-overview .dashboard-v2-grid>.section,#section-overview .dashboard-visual-grid>.section,#section-overview .dashboard-lower-grid>.section { min-width:0; border:1px solid var(--dash-line); border-radius:.9rem; background:#fff; box-shadow:0 3px 12px rgba(24,52,64,.035); }
 #section-overview .dashboard-property-showcase { margin:0 0 .85rem; padding:1rem 1.05rem; }
 #section-overview .dashboard-showcase-heading { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:.75rem; }
@@ -37,8 +43,8 @@ body.sidebar-collapsed .main { width:calc(100% - var(--app-sidebar-compact,4.7re
 #section-overview .dashboard-home-card:hover { transform:translateY(-2px); box-shadow:0 9px 22px rgba(24,52,64,.09); }
 #section-overview .dashboard-home-photo { height:clamp(115px,12vw,165px); } #section-overview .dashboard-home-content { padding:.8rem .9rem; }
 #section-overview .dashboard-home-title { color:#1c3540; font-size:.78rem; font-weight:780; } #section-overview .dashboard-home-location { color:#78888e; font-size:.62rem; }
-#section-overview .dashboard-home-value { display:inline-block; margin:.48rem .4rem .1rem 0; color:#173a46; font-size:1.35rem; font-weight:830; letter-spacing:-.045em; } #section-overview .dashboard-home-value-label { display:inline-block; color:#879398; font-size:.58rem; }
-#section-overview .dashboard-home-stats { gap:.5rem; padding-top:.55rem; } #section-overview .dashboard-home-stats small { color:#7b898e; font-size:.55rem; } #section-overview .dashboard-home-stats strong { color:#233e48; font-size:.68rem; } #section-overview .dashboard-home-note { margin-top:.4rem; color:#8a979b; font-size:.54rem; }
+#section-overview .dashboard-home-value { display:inline-block; margin:.48rem .4rem .1rem 0; color:#173a46; font-size:1.55rem; font-weight:830; letter-spacing:-.045em; } #section-overview .dashboard-home-value-label { display:inline-block; color:#879398; font-size:.58rem; }
+#section-overview .dashboard-home-stats { gap:.5rem; padding-top:.55rem; } #section-overview .dashboard-home-stats small { color:#7b898e; font-size:.55rem; } #section-overview .dashboard-home-stats strong { color:#233e48; font-size:.73rem; } #section-overview .dashboard-home-note { margin-top:.4rem; color:#8a979b; font-size:.54rem; }
 #section-overview .dashboard-v2-grid { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(18rem,.82fr); gap:.85rem; margin:0 0 .85rem; align-items:stretch; }
 #section-overview .dashboard-v2-grid>.section { padding:1rem 1.05rem; } #section-overview .section-head-row { align-items:center; gap:.7rem; }
 #section-overview .section-head-row h2 { margin:.1rem 0; color:#1b3540; font-size:.9rem; font-weight:780; letter-spacing:-.035em; } #section-overview .section-head-row .hint { color:#7b898e; font-size:.62rem; }
@@ -60,289 +66,75 @@ body.sidebar-collapsed .main { width:calc(100% - var(--app-sidebar-compact,4.7re
 :root[data-theme="dark"] #section-overview .dash-actions { border-top-color:#34505a; }
 :root[data-theme="dark"] #section-overview .dash-actions button,:root[data-theme="dark"] #section-overview .dashboard-period-control select { background:#1c3741; border-color:#38545c; color:#e1efed; }
 :root[data-theme="dark"] #section-overview .dash-actions button.primary { background:#0c8c80; border-color:#0c8c80; color:#fff; }
+:root[data-theme="dark"] #section-overview .dash-actions .snapshot-context { color:#c3d8dc; }
 :root[data-theme="dark"] #section-overview .portfolio-snapshot,:root[data-theme="dark"] #section-overview .dashboard-property-showcase,:root[data-theme="dark"] #section-overview .dashboard-market-intelligence,:root[data-theme="dark"] #section-overview .dashboard-v2-grid>.section,:root[data-theme="dark"] #section-overview .dashboard-visual-grid>.section,:root[data-theme="dark"] #section-overview .dashboard-lower-grid>.section { background:#122630; border-color:#2b454e; }
 :root[data-theme="dark"] #section-overview .dashboard-market-item { background:#172f38; }
 @media(max-width:1400px) { #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(3,minmax(105px,1fr)); } #section-overview .portfolio-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media(max-width:1050px) { #section-overview .dash-head.dashboard-v2-head { grid-template-columns:1fr; } #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); } #section-overview .dashboard-v2-grid { grid-template-columns:1fr; } #section-overview .dashboard-visual-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } #section-overview .dashboard-visual-card:last-child { grid-column:1/-1; } #section-overview .dashboard-market-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
-@media(max-width:760px) { .main,body.sidebar-collapsed .main { width:100%; padding:.85rem; } #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } #section-overview .dashboard-visual-grid,#section-overview .dashboard-lower-grid { grid-template-columns:1fr; } #section-overview .dashboard-visual-card:last-child { grid-column:auto; } }
+@media(max-width:760px) { .main { padding:.85rem; } #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } #section-overview .dashboard-visual-grid,#section-overview .dashboard-lower-grid { grid-template-columns:1fr; } #section-overview .dashboard-visual-card:last-child { grid-column:auto; } }
 @media(max-width:560px) { #section-overview .dash-head.dashboard-v2-head { padding:1rem; } #section-overview .dashboard-hero-metrics { grid-template-columns:1fr 1fr; } #section-overview .dash-actions { flex-wrap:wrap; } #section-overview .portfolio-kpi-grid,#section-overview .dashboard-market-grid,#section-overview .dashboard-property-gallery { grid-template-columns:1fr 1fr; } #section-overview .dashboard-showcase-heading { align-items:flex-start; } #section-overview .dashboard-home-stats { grid-template-columns:1fr 1fr; } #section-overview .dashboard-main-chart { height:250px; } }
 @media(prefers-reduced-motion:reduce) { #section-overview .dashboard-home-card,#section-overview .dashboard-home-photo img { transition:none !important; } }
 
-/* Screenshot refinement: use the full workspace width and give the hero a balanced rhythm. */
-.main {
-  width:100% !important;
-  max-width:none !important;
-  margin:0 !important;
-  padding:1.1rem clamp(1.1rem,2vw,2rem) 2.5rem !important;
-}
-#section-overview .dash-head.dashboard-v2-head {
-  grid-template-columns:minmax(0,1fr) auto;
-  grid-template-rows:auto auto auto;
-  align-items:center;
-}
-#section-overview .dash-heading-copy { grid-column:1; grid-row:1; }
-#section-overview .dashboard-hero-metrics {
-  grid-column:1/-1;
-  grid-row:2;
-  grid-template-columns:repeat(5,minmax(0,1fr));
-  width:100%;
-  margin-top:.35rem;
-}
-#section-overview .dash-actions {
-  grid-column:1/-1;
-  grid-row:3;
-}
-#section-overview .dashboard-hero-stat {
-  min-height:4.7rem;
-  padding:.7rem .85rem;
-}
-#section-overview .dashboard-hero-stat strong {
-  font-size:clamp(1rem,1.35vw,1.3rem);
-}
-#section-overview .portfolio-kpi-grid {
-  grid-template-columns:repeat(6,minmax(0,1fr));
-}
-#section-overview .portfolio-kpi {
-  padding:.75rem .85rem;
-}
-#section-overview .portfolio-kpi-label { font-size:.61rem; }
-#section-overview .portfolio-kpi-value { font-size:clamp(1.05rem,1.35vw,1.35rem); }
-#section-overview .portfolio-kpi-note { font-size:.6rem; }
-#section-overview .dashboard-home-value { font-size:1.55rem; }
-#section-overview .dashboard-home-stats strong { font-size:.73rem; }
-@media(max-width:1250px) {
-  #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); }
-}
-@media(max-width:900px) {
-  #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
-}
-@media(max-width:620px) {
-  .main,body.sidebar-collapsed .main { width:100% !important; max-width:none !important; margin:0 !important; padding:.85rem !important; }
-  #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  #section-overview .portfolio-kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-}
-
-/* Desktop top-line composition: title, five portfolio metrics and actions share one row. */
-@media(min-width:1251px) {
+/* Desktop hero row: title copy · five portfolio metrics · actions, one line.
+   Flex wins over the base grid because this block sits last in the file. */
+@media (min-width: 1100px) {
   #section-overview .dash-head.dashboard-v2-head {
-    grid-template-columns:minmax(220px,.9fr) minmax(0,2.3fr) minmax(230px,auto) !important;
-    grid-template-rows:auto !important;
-    column-gap:1rem !important;
-    row-gap:.5rem !important;
-    align-items:center !important;
+    display:flex;
+    flex-flow:row nowrap;
+    align-items:center;
+    justify-content:space-between;
+    gap:1rem;
+    padding:1.05rem 1.15rem;
     min-height:9.2rem;
   }
   #section-overview .dash-heading-copy {
-    grid-column:1 !important;
-    grid-row:1 !important;
-    max-width:none;
-    min-width:0;
+    flex:0 1 25%;
+    width:25%;
+    min-width:190px;
+    max-width:25%;
   }
-  #section-overview .dash-title { font-size:clamp(1.45rem,1.7vw,2rem); }
-  #section-overview .dash-sub { max-width:24rem; }
+  #section-overview .dash-title { font-size:clamp(1.25rem,1.55vw,1.85rem); }
+  #section-overview .dash-sub { font-size:.7rem; }
   #section-overview .dashboard-hero-metrics {
-    grid-column:2 !important;
-    grid-row:1 !important;
-    grid-template-columns:repeat(5,minmax(0,1fr)) !important;
-    gap:.4rem !important;
-    width:100%;
-    margin:0 !important;
-    align-self:stretch;
+    display:grid;
+    flex:1 1 auto;
+    width:auto;
+    min-width:0;
+    margin:0;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:.4rem;
   }
   #section-overview .dashboard-hero-stat {
     min-width:0;
-    min-height:5.3rem;
-    padding:.6rem .55rem;
+    min-height:5rem;
+    padding:.55rem .5rem;
   }
-  #section-overview .dashboard-hero-stat span { font-size:.55rem; }
-  #section-overview .dashboard-hero-stat strong { font-size:clamp(.88rem,1.05vw,1.15rem); }
-  #section-overview .dashboard-hero-stat small { font-size:.51rem; }
+  #section-overview .dashboard-hero-stat strong { font-size:clamp(.8rem,.95vw,1.08rem); }
   #section-overview .dash-actions {
-    grid-column:3 !important;
-    grid-row:1 !important;
     display:flex;
-    flex-direction:column;
+    flex:0 0 175px;
+    width:175px;
+    min-width:0;
+    flex-flow:column nowrap;
     align-items:stretch;
     justify-content:center;
-    gap:.38rem;
-    padding:0 0 0 .85rem;
-    border:0;
-    border-left:1px solid rgba(255,255,255,.18);
-    min-width:0;
+    gap:.32rem;
+    margin:0;
+    padding:0 0 0 .8rem;
+    border-top:0;
+    border-left:1px solid var(--dash-line);
   }
-  #section-overview .dash-actions .snapshot-context { margin:0 0 .1rem; color:#c3d8dc; }
-  #section-overview .dash-actions button { width:100%; min-height:1.9rem; padding:.35rem .55rem; white-space:nowrap; }
-}
-@media(min-width:1251px) and (max-width:1450px) {
-  #section-overview .dash-head.dashboard-v2-head {
-    grid-template-columns:minmax(190px,.8fr) minmax(0,2.2fr) minmax(190px,auto) !important;
-    padding:1rem !important;
-    column-gap:.7rem !important;
-  }
-  #section-overview .dashboard-hero-stat { padding:.5rem .4rem; }
-  #section-overview .dash-title { font-size:1.45rem; }
-}
-
-/* Definitive desktop override: flex layout avoids inherited grid/breakpoint collisions. */
-@media (min-width: 1100px) {
-  .layout { width:100%; max-width:none; }
-  .main {
-    width:100% !important;
-    max-width:none !important;
-    flex:1 1 auto !important;
-    align-self:stretch !important;
-    margin:0 !important;
-  }
-  #section-overview.dashboard-v2 {
-    display:block;
-    width:100% !important;
-    max-width:none !important;
-    margin:0 !important;
-  }
-  #section-overview .dash-head.dashboard-v2-head {
-    display:flex !important;
-    flex-flow:row nowrap !important;
-    align-items:center !important;
-    justify-content:space-between !important;
-    gap:1rem !important;
-    width:100% !important;
-    min-width:0 !important;
-    padding:1.05rem 1.15rem !important;
-  }
-  #section-overview .dash-heading-copy {
-    flex:0 1 25% !important;
-    width:25% !important;
-    max-width:25% !important;
-    min-width:190px !important;
-  }
-  #section-overview .dash-title { font-size:clamp(1.25rem,1.55vw,1.85rem) !important; }
-  #section-overview .dash-sub { font-size:.7rem !important; }
-  #section-overview .dashboard-hero-metrics {
-    display:grid !important;
-    flex:1 1 0 !important;
-    width:auto !important;
-    min-width:0 !important;
-    grid-template-columns:repeat(5,minmax(0,1fr)) !important;
-    gap:.38rem !important;
-    margin:0 !important;
-  }
-  #section-overview .dashboard-hero-stat {
-    min-width:0 !important;
-    min-height:5rem !important;
-    padding:.55rem .48rem !important;
-  }
-  #section-overview .dashboard-hero-stat span { font-size:.51rem !important; }
-  #section-overview .dashboard-hero-stat strong { font-size:clamp(.8rem,.95vw,1.08rem) !important; }
-  #section-overview .dashboard-hero-stat small { font-size:.48rem !important; }
-  #section-overview .dash-actions {
-    display:flex !important;
-    flex:0 0 175px !important;
-    width:175px !important;
-    min-width:175px !important;
-    flex-flow:column nowrap !important;
-    align-items:stretch !important;
-    justify-content:center !important;
-    gap:.32rem !important;
-    margin:0 !important;
-    padding:0 0 0 .75rem !important;
-    border:0 !important;
-    border-left:1px solid rgba(255,255,255,.2) !important;
-  }
-  #section-overview .dash-actions .snapshot-context { margin:0 0 .1rem !important; }
+  #section-overview .dash-actions .snapshot-context { margin:0 0 .1rem; }
   #section-overview .dash-actions button {
-    width:100% !important;
-    min-height:1.8rem !important;
-    padding:.3rem .45rem !important;
-    font-size:.61rem !important;
-    white-space:nowrap !important;
+    width:100%;
+    min-height:1.85rem;
+    padding:.32rem .5rem;
+    font-size:.63rem;
+    white-space:nowrap;
   }
 }
 @media (min-width:1100px) and (max-width:1350px) {
-  #section-overview .dash-heading-copy { flex-basis:21% !important; width:21% !important; max-width:21% !important; min-width:165px !important; }
-  #section-overview .dash-actions { flex-basis:150px !important; width:150px !important; min-width:150px !important; }
-  #section-overview .dash-title { font-size:1.25rem !important; }
-}
-
-/* Final viewport-aware override: the app can run in a high-DPI browser where CSS
-   viewport width is below 1100px even on a wide physical monitor. */
-@media (min-width: 700px) {
-  .main {
-    width:100% !important;
-    max-width:none !important;
-    padding-left:clamp(.75rem,1.5vw,1.5rem) !important;
-    padding-right:clamp(.75rem,1.5vw,1.5rem) !important;
-  }
-  #section-overview.dashboard-v2 {
-    display:block !important;
-    width:100% !important;
-    max-width:none !important;
-    margin-inline:0 !important;
-    padding-inline:0 !important;
-  }
-  #section-overview .dash-head.dashboard-v2-head {
-    display:flex !important;
-    flex-direction:row !important;
-    flex-wrap:nowrap !important;
-    align-items:center !important;
-    justify-content:space-between !important;
-    width:100% !important;
-    max-width:none !important;
-    gap:.55rem !important;
-    padding:.85rem !important;
-  }
-  #section-overview .dash-heading-copy {
-    flex:0 1 22% !important;
-    width:22% !important;
-    max-width:22% !important;
-    min-width:130px !important;
-  }
-  #section-overview .dash-title {
-    font-size:clamp(1.05rem,1.65vw,1.75rem) !important;
-    line-height:1.1 !important;
-  }
-  #section-overview .dash-sub { font-size:.62rem !important; }
-  #section-overview .dashboard-hero-metrics {
-    display:grid !important;
-    flex:1 1 auto !important;
-    width:auto !important;
-    min-width:0 !important;
-    grid-template-columns:repeat(5,minmax(0,1fr)) !important;
-    gap:.25rem !important;
-    margin:0 !important;
-  }
-  #section-overview .dashboard-hero-stat {
-    min-width:0 !important;
-    min-height:4.25rem !important;
-    padding:.42rem .32rem !important;
-  }
-  #section-overview .dashboard-hero-stat span { font-size:.45rem !important; }
-  #section-overview .dashboard-hero-stat strong { font-size:clamp(.7rem,.9vw,.98rem) !important; }
-  #section-overview .dashboard-hero-stat small { display:none !important; }
-  #section-overview .dash-actions {
-    display:flex !important;
-    flex:0 0 126px !important;
-    width:126px !important;
-    min-width:126px !important;
-    flex-direction:column !important;
-    gap:.22rem !important;
-    margin:0 !important;
-    padding:0 0 0 .45rem !important;
-    border:0 !important;
-    border-left:1px solid rgba(255,255,255,.2) !important;
-  }
-  #section-overview .dash-actions .snapshot-context { display:none !important; }
-  #section-overview .dash-actions button {
-    width:100% !important;
-    min-height:1.55rem !important;
-    padding:.2rem .28rem !important;
-    font-size:.52rem !important;
-    white-space:nowrap !important;
-  }
-}
-@media (min-width:700px) and (max-width:900px) {
-  #section-overview .dash-heading-copy { flex-basis:18% !important; width:18% !important; max-width:18% !important; min-width:110px !important; }
-  #section-overview .dash-actions { flex-basis:108px !important; width:108px !important; min-width:108px !important; }
-  #section-overview .dash-title { font-size:1rem !important; }
-  #section-overview .dashboard-hero-stat span { font-size:.4rem !important; }
-  #section-overview .dashboard-hero-stat strong { font-size:.67rem !important; }
+  #section-overview .dash-heading-copy { flex-basis:21%; width:21%; min-width:165px; }
+  #section-overview .dash-actions { flex-basis:150px; width:150px; }
+  #section-overview .dash-title { font-size:1.25rem; }
 }

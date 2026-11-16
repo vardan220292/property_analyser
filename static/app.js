@@ -621,8 +621,8 @@
   const TOUR_STEPS = [
     {
       title: 'Your dashboard',
-      body: 'Everything you have analysed in one place — the score, the yield and the weekly cost of holding each property.',
-      target: '#dash-stats',
+      body: 'Everything you have analysed in one place — portfolio highlights, cash flow and the long-term position of each property.',
+      target: '#dashboard-hero-metrics',
     },
     {
       title: 'Property data',
@@ -1067,7 +1067,7 @@
 
     $('#dash-stats').innerHTML = stats.map((s) => `
       <div class="stat-card">
-        ${statChip(s.icon, s.label === 'Best score' ? 'amber' : s.label === 'Portfolio value' ? 'blue' : s.label === 'Avg investment score' ? 'green' : '')}
+        ${statChip(s.icon, s.label === 'Best score' ? 'amber' : s.label === 'Purchase value' ? 'blue' : s.label === 'Avg investment score' ? 'green' : '')}
         <div class="stat-label">${escapeHtml(s.label)}</div>
         <div class="stat-value ${s.valueClass || ''}">${escapeHtml(s.value)}${s.pill ? ` <span class="pill">${s.pill}</span>` : ''}</div>
         ${s.bar !== null && s.bar !== undefined
