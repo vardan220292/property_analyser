@@ -2253,3 +2253,27 @@ body { background:linear-gradient(135deg,rgba(40,116,208,.045),transparent 34%),
 #section-scenarios .chart-box.is-empty:after { content:"Select up to 3 saved scenarios above to compare these results."; max-width:260px; text-align:center; color:var(--muted); font-size:.85rem; line-height:1.5; }
 #section-overview .portfolio-kpi-grid:empty:after { content:"Calculating your current scenario…"; color:var(--muted); padding:18px; }
 #section-overview .portfolio-performance:empty:after { content:"Property performance will appear when the scenario is calculated."; color:var(--muted); }
+
+
+/* Dashboard insight charts — give the overview a visual, decision-led rhythm. */
+.dashboard-visual-grid {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:18px 0;
+}
+.dashboard-visual-card {
+  min-width:0; padding:18px 18px 14px; border:1px solid var(--bd);
+  border-radius:18px; background:var(--card); box-shadow:var(--shadow);
+}
+.dashboard-visual-card .dash-eyebrow { font-size:.62rem; }
+.dashboard-visual-card h2 { margin:.12rem 0 .25rem; color:var(--navy-900); font-size:1rem; }
+:root[data-theme="dark"] .dashboard-visual-card h2 { color:var(--txt); }
+.dashboard-visual-card .hint { min-height:2.4em; font-size:.72rem; line-height:1.45; }
+.dashboard-visual-card .chart-box { height:245px; min-height:245px; margin-top:10px; }
+.dashboard-visual-card.cash-visual { border-top:4px solid #0f9b8e; }
+.dashboard-visual-card.allocation-visual { border-top:4px solid #805ad5; }
+.dashboard-visual-card.sale-visual { border-top:4px solid #e5a12b; }
+#chart-ov-allocation { max-height:100%; }
+.dashboard-visual-card .chart-box.is-empty { display:grid; place-items:center; border:1px dashed var(--bd-strong); border-radius:12px; background:var(--bg); }
+.dashboard-visual-card .chart-box.is-empty:after { content:"Add an investment property to see the portfolio mix."; color:var(--muted); max-width:210px; text-align:center; font-size:.8rem; line-height:1.5; }
+.dashboard-visual-card .chart-box.is-empty canvas { display:none; }
+@media(max-width:1120px) { .dashboard-visual-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .dashboard-visual-card.sale-visual { grid-column:1/-1; } }
+@media(max-width:700px) { .dashboard-visual-grid { grid-template-columns:1fr; } .dashboard-visual-card.sale-visual { grid-column:auto; } }
