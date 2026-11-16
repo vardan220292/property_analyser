@@ -48,9 +48,15 @@ The product should feel like a professional property-investment decision workspa
 ## Current implementation status (16 Nov 2026)
 
 - Shared visual foundation: implemented; final responsive/accessibility regression pending.
-- Dashboard: first pass implemented; executive-style visual refinement added; final screenshot review pending.
-- Remaining page redesigns: shared page-level styling pass applied; page-specific visual review and refinements pending.
-- Full validation: not yet completed. Do not treat the redesign as release-ready until all 11 sections pass the validation checklist below.
+- Dashboard: first pass implemented; screenshot-review contrast defect corrected with a high-contrast hero, responsive metric/action layout and refined CTA states.
+- Scenarios & Reports: comparison chart empty states now explain the selection action and reduce blank-chart ambiguity.
+- Cash Flow: charts and insight are prioritised above the bounded annual detail table; mobile layout stacks cleanly.
+- Investment Inputs: property tabs and advanced assumption groups have clearer progressive-disclosure styling.
+- Property Intelligence / Area & Suburb: shared empty-state and section treatments refined; verify live map/no-address states in browser.
+- Exit & CGT: page hierarchy and exit section styling refined; the global warning remains visible and must be checked in the live navigation flow.
+- Branding: replaced the missing logo asset request with an in-page RV mark and added an inline SVG favicon to eliminate the two reported asset 404s.
+- Remaining pages: shared page-level styling pass applied; page-specific interaction and responsive review still required.
+- Full validation: pending after these changes. Do not treat the redesign as release-ready until all 11 sections pass the validation checklist below.
 
 ## Delivery milestones
 1. Shared visual foundation: tokens, typography, navigation, page rhythm, responsive behaviour and reusable empty-state patterns.
