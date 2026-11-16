@@ -2881,3 +2881,12 @@ body { background:linear-gradient(135deg,rgba(40,116,208,.045),transparent 34%),
   #section-overview .dashboard-showcase-heading { align-items:flex-start; }
   #section-overview .dashboard-home-photo { height:135px; }
 }
+
+
+#section-overview .portfolio-ppor-row {
+  background:var(--pri-soft);
+  font-weight:700;
+}
+#section-overview .portfolio-ppor-row td:first-child {
+  color:var(--pri-dark);
+}
