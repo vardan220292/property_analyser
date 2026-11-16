@@ -869,12 +869,17 @@
     if (context) context.textContent = inputs.scenarioName || 'Unsaved scenario';
     const hero = $('#dashboard-hero-metrics');
     if (hero) {
-      const count = props.length;
-      const weeklyLabel = weekly === null ? '—' : (weekly > 0 ? money(weekly) + ' / week' : money(Math.abs(weekly)) + ' surplus / week');
+      const count = props.length + (pporValue > 0 ? 1 : 0);
+      const investmentDebt = metrics ? Number(metrics.ipLoanAmount) || 0 : 0;
+      const totalDebt = investmentDebt + pporDebt;
+      const currentEquity = totalPropertyAssets - totalDebt;
+      const weeklyLabel = weekly === null ? '—' : (weekly > 0 ? money(weekly) + ' out' : money(Math.abs(weekly)) + ' surplus');
       hero.innerHTML = [
-        ['Properties in portfolio', String(count + (pporValue > 0 ? 1 : 0)), pporValue > 0 ? 'Including your PPOR' : 'Investment properties only'],
-        ['Total property assets', money(totalPropertyAssets), pporValue > 0 ? 'Includes your home' : 'Before future growth'],
-        ['Weekly after-tax position', weeklyLabel, 'Year-one estimate']
+        ['Properties', String(count), pporValue > 0 ? 'Including your home' : 'Investment properties'],
+        ['Property assets', money(totalPropertyAssets), 'Entered purchase / home values'],
+        ['Total debt', money(totalDebt), 'Investment + home loans'],
+        ['Current model equity', money(currentEquity), 'Assets less entered debt'],
+        ['Weekly cash position', weeklyLabel, 'Year-one after-tax estimate']
       ].map(item => '<div class="dashboard-hero-stat"><span>' + escapeHtml(item[0]) + '</span><strong>' + escapeHtml(item[1]) + '</strong><small>' + escapeHtml(item[2]) + '</small></div>').join('');
     }
 
@@ -885,7 +890,7 @@
       portfolioHomes.push({
         kind: 'PPOR · HOME', label: inputs.pporAddress || 'Principal place of residence',
         location: (inputs.pporAddressMeta && [inputs.pporAddressMeta.suburb, inputs.pporAddressMeta.state].filter(Boolean).join(', ')) || 'Your home',
-        value: pporValue, debt: pporDebt, equity: pporValue - pporDebt,
+        value: pporValue, valueLabel: 'Entered home value', debt: pporDebt, equity: pporValue - pporDebt,
         image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=82',
         note: 'Representative home image'
       });
@@ -901,7 +906,7 @@
       portfolioHomes.push({
         kind: 'INVESTMENT PROPERTY', label: raw.label || raw.address || ('Investment property ' + (i + 1)),
         location: (raw.addressMeta && [raw.addressMeta.suburb, raw.addressMeta.state].filter(Boolean).join(', ')) || raw.address || 'Location not added',
-        value: Number(m.purchasePrice || raw.purchasePrice || 0),
+        value: Number(m.purchasePrice || raw.purchasePrice || 0), valueLabel: 'Purchase price',
         debt: Number(m.ipLoanAmount || 0), equity: Number(m.tenYearEquity || 0),
         yield: m.grossYield, cash: m.weeklyOutOfPocket,
         image: photoSet[i % photoSet.length], note: 'Representative property image'
@@ -912,10 +917,10 @@
       '<article class="dashboard-home-card">' +
         '<div class="dashboard-home-photo"><img src="' + p.image + '" alt="Representative exterior of ' + escapeHtml(p.label) + '" loading="lazy"><span class="dashboard-home-kind">' + escapeHtml(p.kind) + '</span></div>' +
         '<div class="dashboard-home-content"><div class="dashboard-home-title">' + escapeHtml(p.label) + '</div><div class="dashboard-home-location">' + escapeHtml(p.location) + '</div>' +
-        '<div class="dashboard-home-value">' + money(p.value) + '</div><div class="dashboard-home-stats">' +
-        '<span><small>' + (p.kind.startsWith('PPOR') ? 'Mortgage' : 'Loan') + '</small><strong>' + money(p.debt) + '</strong></span>' +
-        '<span><small>' + (p.kind.startsWith('PPOR') ? 'Current equity' : 'Projected equity') + '</small><strong>' + money(p.equity) + '</strong></span>' +
-        (p.yield != null ? '<span><small>Gross yield</small><strong>' + fmtPct(p.yield, 2) + '</strong></span>' : '') +
+        '<div class="dashboard-home-value">' + money(p.value) + '</div><div class="dashboard-home-value-label">' + escapeHtml(p.valueLabel || 'Entered value') + '</div><div class="dashboard-home-stats">' +
+        '<span><small>' + (p.kind.startsWith('PPOR') ? 'Mortgage' : 'Loan balance') + '</small><strong>' + money(p.debt) + '</strong></span>' +
+        '<span><small>' + (p.kind.startsWith('PPOR') ? 'Current equity' : '10-yr projected equity') + '</small><strong>' + money(p.equity) + '</strong></span>' +
+        (p.yield != null ? '<span><small>Gross yield</small><strong>' + fmtPct(p.yield, 2) + '</strong></span>' : (p.cash != null ? '<span><small>Weekly cash flow</small><strong>' + (p.cash > 0 ? '−' : '+') + money(Math.abs(p.cash)) + '</strong></span>' : '')) +
         '</div><div class="dashboard-home-note">' + p.note + '</div></div></article>'
     ).join('') : '<div class="empty-note">Add your PPOR value or an investment property to build your portfolio view.</div>';
 
@@ -933,7 +938,8 @@
       const lvr = metrics && Number.isFinite(Number(metrics.ipLvrActual)) ? fmtPct(metrics.ipLvrActual, 1) : '—';
       const yieldValue = metrics ? fmtPct(metrics.grossYield || 0, 2) : '—';
       const cashValue = annual === null ? '—' : (annual > 0 ? money(annual) + ' required' : money(Math.abs(annual)) + ' surplus');
-      health.innerHTML = '<div class="dashboard-health-head"><strong>Portfolio health indicators</strong><span>Based on current assumptions</span></div>' +
+      const warningCount = (result && result.warnings || []).length;
+      health.innerHTML = '<div class="dashboard-health-head"><strong>Portfolio health &amp; model checks</strong><span>' + (warningCount ? warningCount + ' items to review' : 'No calculation warnings') + '</span></div>' +
         '<div class="dashboard-health-grid">' +
         '<div><small>Investment LVR</small><strong>' + escapeHtml(lvr) + '</strong></div>' +
         '<div><small>Gross rental yield</small><strong>' + escapeHtml(yieldValue) + '</strong></div>' +
@@ -1138,6 +1144,11 @@
   }
 
   function wireDashboard() {
+    const periodControl = $('#dashboard-period');
+    if (periodControl) periodControl.addEventListener('change', () => {
+      dashboardProjectionYears = Math.max(1, Number(periodControl.value) || 20);
+      if (state.result) renderOverview();
+    });
     const refresh = $('#dash-refresh');
     if (refresh) refresh.addEventListener('click', () => loadDashboard(true));
     const openInputs = () => {
@@ -1953,6 +1964,8 @@
   // Overview
   // ------------------------------------------------------------------
 
+  let dashboardProjectionYears = 20;
+
   function renderOverview() {
     const m = state.result.metrics;
     const coc = m.cashOnCashReturn === null
@@ -1971,7 +1984,10 @@
 
     renderOverviewProps();
 
-    const rows = state.result.rows;
+    const allRows = state.result.rows || [];
+    const rows = allRows.slice(0, Math.max(1, dashboardProjectionYears));
+    const periodControl = $('#dashboard-period');
+    if (periodControl && periodControl.value !== String(dashboardProjectionYears)) periodControl.value = String(dashboardProjectionYears);
     const labels = rows.map((r) => 'Y' + r.year + ' · ' + r.calendarYear);
     drawChart('chart-ov-equity', {
       type: 'line',
