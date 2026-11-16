@@ -871,7 +871,9 @@
     if (hero) {
       const count = props.length + (pporValue > 0 ? 1 : 0);
       const investmentDebt = metrics ? Number(metrics.ipLoanAmount) || 0 : 0;
-      const totalDebt = investmentDebt + pporDebt;
+      const firstProjection = result && result.rows && result.rows[0] || {};
+      const projectedDebt = Number(firstProjection.totalDebt);
+      const totalDebt = Number.isFinite(projectedDebt) ? projectedDebt : investmentDebt + pporDebt;
       const currentEquity = totalPropertyAssets - totalDebt;
       const weeklyLabel = weekly === null ? '—' : (weekly > 0 ? money(weekly) + ' out' : money(Math.abs(weekly)) + ' surplus');
       hero.innerHTML = [
