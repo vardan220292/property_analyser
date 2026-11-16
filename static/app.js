@@ -944,6 +944,68 @@
     const alerts = $('#portfolio-alerts'), warnings = (result && result.warnings || []).slice(0, 4);
     if (alerts) alerts.innerHTML = warnings.length ? warnings.map(w => '<div class="portfolio-alert"><span class="alert-dot"></span><span>' + escapeHtml(w) + '</span></div>').join('') : '<div class="portfolio-clear"><span>✓</span><div><strong>No calculation warnings</strong><small>Confirm assumptions with your lender and tax adviser before making decisions.</small></div></div>';
   }
+  function renderDashboardMarketIntel() {
+    const root = $('#dashboard-market-intel');
+    if (!root) return;
+    const inputs = state.inputs || {};
+    const first = (inputs.properties || []).find((p) => p && p.address);
+    const meta = first && first.addressMeta || {};
+    const suburb = currentSuburb() || {};
+    const cards = [];
+    const add = (label, value, note) => cards.push(
+      '<div class="dashboard-market-item"><small>' + escapeHtml(label) + '</small><strong>' + escapeHtml(value) + '</strong><span>' + escapeHtml(note || '') + '</span></div>'
+    );
+    if (first && numOrNull(meta.lat) !== null && numOrNull(meta.lon) !== null) {
+      const key = inputs.properties.indexOf(first) + ':' + Number(meta.lat).toFixed(4) + ',' + Number(meta.lon).toFixed(4);
+      const intelData = intel.cache[key];
+      const parcel = intelData && intelData.parcel || {};
+      if (intelData && intelData.jurisdiction === 'VIC') {
+        add('Land parcel area', parcel.areaSqm ? fmtNum(parcel.areaSqm) + ' m²' : 'Not returned', 'Vicmap Property · CC BY 4.0');
+        add('Property reference', parcel.propertyReference || 'Not matched', 'Victorian cadastral record');
+        add('Council reference', parcel.propertyNumber || 'Not available', 'Vicmap property attribute');
+      } else if (intelData && parcel) {
+        add('Land parcel area', parcel.areaSqm ? fmtNum(parcel.areaSqm) + ' m²' : 'Not returned', 'Queensland Government spatial data');
+        add('Lot / plan', parcel.lotPlan || 'Not returned', 'Queensland cadastral record');
+        add('Local government', parcel.lga || 'Not returned', 'Queensland Government');
+      } else {
+        add('Property parcel', 'Loading…', 'Address coordinates available');
+        loadDashboardPropertyIntel(first, key);
+      }
+    } else {
+      add('Property parcel', 'Address needed', 'Add and locate an investment property');
+    }
+    if (suburb.medianPrice != null) add('Suburb median sale', fmtMoney(suburb.medianPrice), 'Saved suburb reference data');
+    if (suburb.medianRent3Bed != null) add('3-bed median rent', fmtMoney(suburb.medianRent3Bed) + '/wk', 'Saved suburb reference data');
+    if (suburb.medianRent4Bed != null) add('4-bed median rent', fmtMoney(suburb.medianRent4Bed) + '/wk', 'Saved suburb reference data');
+    if (suburb.vacancyPct != null) add('Vacancy rate', Number(suburb.vacancyPct).toFixed(1) + '%', 'Saved suburb reference data');
+    if (suburb.growth5yrPct != null) add('5-year price growth', Number(suburb.growth5yrPct).toFixed(1) + '%', 'Saved suburb reference data');
+    if (cards.length === 0) {
+      root.innerHTML = '<div class="empty-note">No property or suburb intelligence is available yet. Add a located address and suburb market data.</div>';
+      return;
+    }
+    root.innerHTML = cards.join('');
+  }
+
+  function loadDashboardPropertyIntel(property, key) {
+    if (!property || !property.addressMeta || !key || intel.loadingKey === key) return;
+    const meta = property.addressMeta;
+    const lat = numOrNull(meta.lat), lon = numOrNull(meta.lon);
+    if (lat === null || lon === null) return;
+    intel.loadingKey = key;
+    const isVic = String(meta.state || state.inputs.state || '').toUpperCase() === 'VIC';
+    api((isVic ? '/api/intel/vic-property' : '/api/intel/property') + '?lat=' + lat + '&lon=' + lon)
+      .then((data) => {
+        intel.cache[key] = data;
+        renderDashboardMarketIntel();
+        if (propertySectionVisible()) renderProperty();
+      })
+      .catch((err) => {
+        const root = $('#dashboard-market-intel');
+        if (root) root.innerHTML += '<div class="dashboard-data-footnote">Property data unavailable: ' + escapeHtml(err.message) + '</div>';
+      })
+      .finally(() => { intel.loadingKey = null; });
+  }
+
   function renderDashboard(list) {
     const items = dash.items;
     const scored = items.filter((i) => i.score !== null && i.score !== undefined);
@@ -1182,7 +1244,7 @@
     if (lat === null || lon === null) {
       setPropertyStatus(p.address
         ? 'No map coordinates for this address — pick it from the dropdown in Inputs (or type the full address and click away) so we can locate the parcel.'
-        : 'No address yet. Add one in Inputs to load live Queensland data for the property.');
+        : 'No address yet. Add one in Inputs to load available government property data.');
       $('#property-cards').innerHTML = '';
       $('#property-details').innerHTML = '';
       $('#property-sources').innerHTML = '';
@@ -1592,6 +1654,7 @@
     renderRateFoot();
     renderWarnings();
     renderPortfolioSnapshot();
+    renderDashboardMarketIntel();
     renderOverview();
     renderArea();
     renderCashFlow();
