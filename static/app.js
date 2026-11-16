@@ -1840,6 +1840,8 @@
     })).filter((p) => p.value > 0);
     const allocationCanvas = document.getElementById('chart-ov-allocation');
     if (allocationCanvas) {
+      const allocationBox = allocationCanvas.closest('.chart-box');
+      if (allocationBox) allocationBox.classList.toggle('is-empty', !allocationProps.length);
       if (allocationProps.length) {
         drawChart('chart-ov-allocation', {
           type: 'doughnut',
