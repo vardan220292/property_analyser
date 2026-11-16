@@ -2659,3 +2659,140 @@ body { background:linear-gradient(135deg,rgba(40,116,208,.045),transparent 34%),
 #section-scenarios .chart-box.is-empty::after { content:"Choose one or more saved scenarios in the table above. Select up to three to see equity, weekly cash contribution and value growth compared side by side."; max-width:30rem; }
 #section-scenarios .chart-box.is-empty { min-height:10rem; }
 #section-scenarios .section > .chart-box.is-empty { min-height:12rem; }
+
+
+/* Dashboard art direction refresh — portfolio command centre.
+   Presentation only: existing metrics, charts and event handlers are retained. */
+#section-overview.dashboard-v2 {
+  max-width: 1680px;
+  padding-top: .35rem;
+}
+#section-overview .dash-head.dashboard-v2-head {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 285px;
+  grid-template-columns: minmax(0,1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: space-between;
+  gap: 1.2rem 2rem;
+  margin-bottom: 1.15rem;
+  padding: clamp(1.6rem,3vw,2.8rem);
+  border: 0;
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(ellipse at 82% 0%,rgba(73,218,199,.25),transparent 31%),
+    radial-gradient(ellipse at 100% 100%,rgba(71,132,211,.24),transparent 38%),
+    linear-gradient(112deg,#0a1e2c 0%,#12394a 52%,#08756d 100%);
+  box-shadow: 0 24px 54px rgba(11,43,56,.19);
+}
+#section-overview .dash-head.dashboard-v2-head::before {
+  content:"";
+  position:absolute; z-index:-1;
+  width:420px; height:420px; right:12%; top:-275px;
+  border:1px solid rgba(255,255,255,.13); border-radius:50%;
+  box-shadow:0 0 0 35px rgba(255,255,255,.025),0 0 0 75px rgba(255,255,255,.02),0 0 0 120px rgba(255,255,255,.015);
+}
+#section-overview .dash-heading-copy { max-width:720px; align-self:start; }
+#section-overview .dash-eyebrow { font-size:.66rem; letter-spacing:.16em; }
+#section-overview .dash-title {
+  max-width:16ch; margin:.65rem 0 .8rem;
+  font-size:clamp(2.2rem,4vw,3.65rem); letter-spacing:-.065em;
+}
+#section-overview .dash-sub { max-width:42rem; font-size:.95rem; color:#c9dce5; }
+#section-overview .dash-actions {
+  align-self:start; justify-content:flex-end; gap:.55rem;
+}
+#section-overview .dashboard-hero-metrics {
+  grid-column:1 / -1; grid-row:2;
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  width:min(100%,850px); gap:.7rem; margin:0;
+}
+#section-overview .dashboard-hero-stat {
+  min-height:78px; justify-content:center; padding:.85rem 1rem;
+  border:1px solid rgba(224,255,251,.18);
+  border-radius:1rem; background:rgba(255,255,255,.085);
+  backdrop-filter:blur(12px);
+}
+#section-overview .dashboard-hero-stat strong { font-size:clamp(1rem,1.65vw,1.45rem); }
+#section-overview .dashboard-context-strip {
+  width:fit-content; max-width:100%; margin:-.15rem 0 1rem;
+  padding:.45rem .7rem; border:0; background:transparent;
+}
+#section-overview .portfolio-snapshot.dashboard-v2-kpis {
+  padding:1.25rem 1.35rem 1.35rem;
+  border:1px solid var(--bd); border-radius:1.2rem;
+  background:var(--card); box-shadow:var(--shadow);
+}
+#section-overview .portfolio-snapshot .section-head-row { margin-bottom:1rem; }
+#section-overview .portfolio-snapshot .section-head-row h2 {
+  font-size:1.15rem; letter-spacing:-.035em;
+}
+#section-overview .portfolio-kpi-grid {
+  grid-template-columns:repeat(6,minmax(0,1fr)); gap:0;
+  overflow:hidden; border:1px solid var(--bd); border-radius:1rem;
+  background:var(--bg);
+}
+#section-overview .portfolio-kpi {
+  min-width:0; min-height:112px; padding:1rem 1.05rem;
+  border:0; border-right:1px solid var(--bd); border-radius:0;
+  background:transparent; box-shadow:none;
+}
+#section-overview .portfolio-kpi:last-child { border-right:0; }
+#section-overview .portfolio-kpi:hover { transform:none; background:var(--hover); box-shadow:none; }
+#section-overview .portfolio-kpi-label { min-height:2.2em; font-size:.65rem; line-height:1.35; }
+#section-overview .portfolio-kpi-value { margin:.35rem 0; font-size:clamp(.9rem,1.25vw,1.25rem); letter-spacing:-.04em; }
+#section-overview .portfolio-kpi-note { font-size:.63rem; }
+#section-overview .dashboard-v2-grid { grid-template-columns:minmax(0,1.75fr) minmax(20rem,.85fr); gap:1rem; margin-top:1rem; }
+#section-overview .dashboard-primary-panel,
+#section-overview .dashboard-side-panel,
+#section-overview .dashboard-visual-card,
+#section-overview .dashboard-table-panel,
+#section-overview .dashboard-research-panel {
+  border:1px solid var(--bd); border-radius:1.2rem;
+  box-shadow:var(--shadow);
+}
+#section-overview .dashboard-primary-panel { background:var(--card); }
+#section-overview .dashboard-side-panel { background:linear-gradient(155deg,var(--card),var(--bg-accent)); }
+#section-overview .dashboard-main-chart { height:clamp(290px,34vh,390px); min-height:290px; }
+#section-overview .dashboard-visual-grid {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:1rem; margin-top:1rem;
+}
+#section-overview .dashboard-visual-card { min-width:0; padding:1.15rem; }
+#section-overview .dashboard-visual-card .section-head-row { min-height:4.4rem; align-items:flex-start; }
+#section-overview .dashboard-visual-card .chart-box { height:230px; min-height:210px; }
+#section-overview .dashboard-lower-grid { gap:1rem; margin-top:1rem; }
+#section-overview .dashboard-table-panel,
+#section-overview .dashboard-research-panel { padding:1.2rem; }
+#section-overview .section-head-row h2 { letter-spacing:-.04em; }
+#section-overview .dashboard-warning-block { padding:1rem; border-radius:.9rem; background:var(--warn-bg); }
+@media(max-width:1250px) {
+  #section-overview .portfolio-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  #section-overview .portfolio-kpi:nth-child(3) { border-right:0; }
+  #section-overview .portfolio-kpi:nth-child(-n+3) { border-bottom:1px solid var(--bd); }
+  #section-overview .dashboard-v2-grid { grid-template-columns:minmax(0,1.35fr) minmax(18rem,.9fr); }
+  #section-overview .dashboard-visual-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #section-overview .dashboard-visual-card:last-child { grid-column:1/-1; }
+}
+@media(max-width:900px) {
+  #section-overview .dash-head.dashboard-v2-head { grid-template-columns:1fr; min-height:0; }
+  #section-overview .dash-actions { grid-column:1; justify-content:flex-start; }
+  #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  #section-overview .dashboard-v2-grid,
+  #section-overview .dashboard-visual-grid,
+  #section-overview .dashboard-lower-grid { grid-template-columns:1fr; }
+  #section-overview .dashboard-visual-card:last-child { grid-column:auto; }
+}
+@media(max-width:600px) {
+  #section-overview .dash-head.dashboard-v2-head { padding:1.3rem; border-radius:1.1rem; }
+  #section-overview .dash-title { font-size:2.15rem; }
+  #section-overview .dashboard-hero-metrics { grid-template-columns:1fr; }
+  #section-overview .dashboard-hero-stat { min-height:66px; }
+  #section-overview .portfolio-kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #section-overview .portfolio-kpi { min-height:105px; padding:.8rem; border-bottom:1px solid var(--bd); }
+  #section-overview .portfolio-kpi:nth-child(odd) { border-right:1px solid var(--bd); }
+  #section-overview .portfolio-kpi:nth-child(even) { border-right:0; }
+  #section-overview .portfolio-kpi:nth-last-child(-n+2) { border-bottom:0; }
+  #section-overview .dashboard-visual-card .chart-box { height:220px; }
+}
