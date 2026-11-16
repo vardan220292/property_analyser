@@ -992,7 +992,8 @@
     const lat = numOrNull(meta.lat), lon = numOrNull(meta.lon);
     if (lat === null || lon === null) return;
     intel.loadingKey = key;
-    const isVic = String(meta.state || state.inputs.state || '').toUpperCase() === 'VIC';
+    const jurisdiction = String(meta.state || state.inputs.state || '').toUpperCase();
+    const isVic = jurisdiction === 'VIC' || jurisdiction === 'VICTORIA';
     api((isVic ? '/api/intel/vic-property' : '/api/intel/property') + '?lat=' + lat + '&lon=' + lon)
       .then((data) => {
         intel.cache[key] = data;
@@ -1263,7 +1264,8 @@
       return;
     }
 
-    const isVic = String(meta.state || state.inputs.state || '').toUpperCase() === 'VIC';
+    const jurisdiction = String(meta.state || state.inputs.state || '').toUpperCase();
+    const isVic = jurisdiction === 'VIC' || jurisdiction === 'VICTORIA';
     setPropertyStatus(isVic ? 'Loading Victorian Government property data…' : 'Loading live Queensland data…');
     const seq = ++intel.seq;
     api((isVic ? '/api/intel/vic-property' : '/api/intel/property') + '?lat=' + lat + '&lon=' + lon)
@@ -1276,7 +1278,7 @@
       })
       .catch((err) => {
         if (seq !== intel.seq) return;
-        setPropertyStatus('Could not load Queensland data: ' + err.message);
+        setPropertyStatus('Could not load property data: ' + err.message);
       });
   }
 
