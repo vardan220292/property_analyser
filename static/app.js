@@ -864,6 +864,16 @@
     root.innerHTML = cards.map(x => '<div class="portfolio-kpi ' + x[3] + '"><div class="portfolio-kpi-label">' + escapeHtml(x[0]) + '</div><div class="portfolio-kpi-value">' + escapeHtml(x[1]) + '</div><div class="portfolio-kpi-note">' + escapeHtml(x[2]) + '</div></div>').join('');
     const context = $('#portfolio-snapshot-context');
     if (context) context.textContent = inputs.scenarioName || 'Unsaved scenario';
+    const hero = $('#dashboard-hero-metrics');
+    if (hero) {
+      const count = props.length;
+      const weeklyLabel = weekly === null ? '—' : (weekly > 0 ? money(weekly) + ' / week' : money(Math.abs(weekly)) + ' surplus / week');
+      hero.innerHTML = [
+        ['Properties in scenario', String(count), 'Current investment assets'],
+        ['Combined purchase value', metrics ? money(metrics.purchasePrice) : '—', 'Before future growth'],
+        ['Weekly after-tax position', weeklyLabel, 'Year-one estimate']
+      ].map(item => '<div class="dashboard-hero-stat"><span>' + escapeHtml(item[0]) + '</span><strong>' + escapeHtml(item[1]) + '</strong><small>' + escapeHtml(item[2]) + '</small></div>').join('');
+    }
 
     const ranked = props.map((p, i) => {
       const m = p.metrics || {}, raw = inputs.properties && inputs.properties[i] || {};
