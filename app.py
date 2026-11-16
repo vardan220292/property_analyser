@@ -79,6 +79,7 @@ def welcome():
 @app.route("/portal.js")
 @app.route("/styles.css")
 @app.route("/design-system.css")
+@app.route("/dashboard-premium.css")
 def static_no_cache():
     # The actively-iterated files; never let the browser cache them.
     name = os.path.basename(request.path)
