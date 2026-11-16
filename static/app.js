@@ -853,9 +853,12 @@
     const money = (v) => Number.isFinite(Number(v)) ? fmtMoney(Number(v)) : '—';
     const weekly = metrics ? Number(metrics.weeklyOutOfPocket || 0) : null;
     const annual = weekly === null ? null : weekly * 52;
+    const pporValue = Math.max(0, Number(inputs.pporValue) || 0);
+    const pporDebt = Math.max(0, Number(inputs.pporLoanBalance) || 0);
+    const totalPropertyAssets = (metrics ? Number(metrics.purchasePrice) || 0 : 0) + pporValue;
     const cards = [
-      ['Portfolio purchase value', metrics ? money(metrics.purchasePrice) : '—', 'Combined purchase price', 'blue'],
-      ['Investment debt', metrics ? money(metrics.ipLoanAmount) : '—', 'Initial investment loan exposure', 'violet'],
+      ['Total property assets', money(totalPropertyAssets), pporValue > 0 ? 'Investment properties + PPOR' : 'Investment property portfolio', 'blue'],
+      ['Investment debt', metrics ? money(metrics.ipLoanAmount) : '—', 'Investment-property loan exposure', 'violet'],
       ['Cash required upfront', metrics ? money(metrics.initialCashInvested) : '—', 'Deposit and acquisition costs', 'amber'],
       ['Annual after-tax position', annual === null ? '—' : (annual > 0 ? money(annual) + ' out' : money(Math.abs(annual)) + ' surplus'), 'Year one · weekly position × 52', annual === null ? 'neutral' : annual > 0 ? 'warn' : 'good'],
       ['Gross rental yield', metrics ? fmtPct(metrics.grossYield || 0, 2) : '—', 'Combined scenario yield', 'teal'],
@@ -869,11 +872,52 @@
       const count = props.length;
       const weeklyLabel = weekly === null ? '—' : (weekly > 0 ? money(weekly) + ' / week' : money(Math.abs(weekly)) + ' surplus / week');
       hero.innerHTML = [
-        ['Properties in scenario', String(count), 'Current investment assets'],
-        ['Combined purchase value', metrics ? money(metrics.purchasePrice) : '—', 'Before future growth'],
+        ['Properties in portfolio', String(count + (pporValue > 0 ? 1 : 0)), pporValue > 0 ? 'Including your PPOR' : 'Investment properties only'],
+        ['Total property assets', money(totalPropertyAssets), pporValue > 0 ? 'Includes your home' : 'Before future growth'],
         ['Weekly after-tax position', weeklyLabel, 'Year-one estimate']
       ].map(item => '<div class="dashboard-hero-stat"><span>' + escapeHtml(item[0]) + '</span><strong>' + escapeHtml(item[1]) + '</strong><small>' + escapeHtml(item[2]) + '</small></div>').join('');
     }
+
+    const gallery = $('#dashboard-property-gallery');
+    const propertyCount = $('#dashboard-property-count');
+    const portfolioHomes = [];
+    if (pporValue > 0) {
+      portfolioHomes.push({
+        kind: 'PPOR · HOME', label: inputs.pporAddress || 'Principal place of residence',
+        location: (inputs.pporAddressMeta && [inputs.pporAddressMeta.suburb, inputs.pporAddressMeta.state].filter(Boolean).join(', ')) || 'Your home',
+        value: pporValue, debt: pporDebt, equity: pporValue - pporDebt,
+        image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=82',
+        note: 'Representative home image'
+      });
+    }
+    props.forEach((p, i) => {
+      const raw = inputs.properties && inputs.properties[i] || {}, m = p.metrics || {};
+      const photoSet = [
+        'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=82',
+        'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=900&q=82',
+        'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=900&q=82',
+        'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=900&q=82'
+      ];
+      portfolioHomes.push({
+        kind: 'INVESTMENT PROPERTY', label: raw.label || raw.address || ('Investment property ' + (i + 1)),
+        location: (raw.addressMeta && [raw.addressMeta.suburb, raw.addressMeta.state].filter(Boolean).join(', ')) || raw.address || 'Location not added',
+        value: Number(m.purchasePrice || raw.purchasePrice || 0),
+        debt: Number(m.ipLoanAmount || 0), equity: Number(m.tenYearEquity || 0),
+        yield: m.grossYield, cash: m.weeklyOutOfPocket,
+        image: photoSet[i % photoSet.length], note: 'Representative property image'
+      });
+    });
+    if (propertyCount) propertyCount.textContent = portfolioHomes.length + (portfolioHomes.length === 1 ? ' property' : ' properties');
+    if (gallery) gallery.innerHTML = portfolioHomes.length ? portfolioHomes.map((p, i) =>
+      '<article class="dashboard-home-card">' +
+        '<div class="dashboard-home-photo"><img src="' + p.image + '" alt="Representative exterior of ' + escapeHtml(p.label) + '" loading="lazy"><span class="dashboard-home-kind">' + escapeHtml(p.kind) + '</span></div>' +
+        '<div class="dashboard-home-content"><div class="dashboard-home-title">' + escapeHtml(p.label) + '</div><div class="dashboard-home-location">' + escapeHtml(p.location) + '</div>' +
+        '<div class="dashboard-home-value">' + money(p.value) + '</div><div class="dashboard-home-stats">' +
+        '<span><small>' + (p.kind.startsWith('PPOR') ? 'Mortgage' : 'Loan') + '</small><strong>' + money(p.debt) + '</strong></span>' +
+        '<span><small>' + (p.kind.startsWith('PPOR') ? 'Current equity' : 'Projected equity') + '</small><strong>' + money(p.equity) + '</strong></span>' +
+        (p.yield != null ? '<span><small>Gross yield</small><strong>' + fmtPct(p.yield, 2) + '</strong></span>' : '') +
+        '</div><div class="dashboard-home-note">' + p.note + '</div></div></article>'
+    ).join('') : '<div class="empty-note">Add your PPOR value or an investment property to build your portfolio view.</div>';
 
     const ranked = props.map((p, i) => {
       const m = p.metrics || {}, raw = inputs.properties && inputs.properties[i] || {};
@@ -1863,6 +1907,8 @@
       label: ipLabel(p, i),
       value: Number((p.metrics || {}).purchasePrice || 0),
     })).filter((p) => p.value > 0);
+    const pporAllocation = Number(state.inputs && state.inputs.pporValue) || 0;
+    if (pporAllocation > 0) allocationProps.unshift({ label: 'PPOR · Home', value: pporAllocation });
     const allocationCanvas = document.getElementById('chart-ov-allocation');
     if (allocationCanvas) {
       const allocationBox = allocationCanvas.closest('.chart-box');
