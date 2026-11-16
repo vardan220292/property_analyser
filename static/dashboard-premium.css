@@ -67,3 +67,57 @@ body.sidebar-collapsed .main { width:calc(100% - var(--app-sidebar-compact,4.7re
 @media(max-width:760px) { .main,body.sidebar-collapsed .main { width:100%; padding:.85rem; } #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } #section-overview .dashboard-visual-grid,#section-overview .dashboard-lower-grid { grid-template-columns:1fr; } #section-overview .dashboard-visual-card:last-child { grid-column:auto; } }
 @media(max-width:560px) { #section-overview .dash-head.dashboard-v2-head { padding:1rem; } #section-overview .dashboard-hero-metrics { grid-template-columns:1fr 1fr; } #section-overview .dash-actions { flex-wrap:wrap; } #section-overview .portfolio-kpi-grid,#section-overview .dashboard-market-grid,#section-overview .dashboard-property-gallery { grid-template-columns:1fr 1fr; } #section-overview .dashboard-showcase-heading { align-items:flex-start; } #section-overview .dashboard-home-stats { grid-template-columns:1fr 1fr; } #section-overview .dashboard-main-chart { height:250px; } }
 @media(prefers-reduced-motion:reduce) { #section-overview .dashboard-home-card,#section-overview .dashboard-home-photo img { transition:none !important; } }
+
+/* Screenshot refinement: use the full workspace width and give the hero a balanced rhythm. */
+.main {
+  width:100% !important;
+  max-width:none !important;
+  margin:0 !important;
+  padding:1.1rem clamp(1.1rem,2vw,2rem) 2.5rem !important;
+}
+#section-overview .dash-head.dashboard-v2-head {
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-rows:auto auto auto;
+  align-items:center;
+}
+#section-overview .dash-heading-copy { grid-column:1; grid-row:1; }
+#section-overview .dashboard-hero-metrics {
+  grid-column:1/-1;
+  grid-row:2;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  width:100%;
+  margin-top:.35rem;
+}
+#section-overview .dash-actions {
+  grid-column:1/-1;
+  grid-row:3;
+}
+#section-overview .dashboard-hero-stat {
+  min-height:4.7rem;
+  padding:.7rem .85rem;
+}
+#section-overview .dashboard-hero-stat strong {
+  font-size:clamp(1rem,1.35vw,1.3rem);
+}
+#section-overview .portfolio-kpi-grid {
+  grid-template-columns:repeat(6,minmax(0,1fr));
+}
+#section-overview .portfolio-kpi {
+  padding:.75rem .85rem;
+}
+#section-overview .portfolio-kpi-label { font-size:.61rem; }
+#section-overview .portfolio-kpi-value { font-size:clamp(1.05rem,1.35vw,1.35rem); }
+#section-overview .portfolio-kpi-note { font-size:.6rem; }
+#section-overview .dashboard-home-value { font-size:1.55rem; }
+#section-overview .dashboard-home-stats strong { font-size:.73rem; }
+@media(max-width:1250px) {
+  #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); }
+}
+@media(max-width:900px) {
+  #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+@media(max-width:620px) {
+  .main,body.sidebar-collapsed .main { width:100% !important; max-width:none !important; margin:0 !important; padding:.85rem !important; }
+  #section-overview .dashboard-hero-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #section-overview .portfolio-kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
