@@ -2890,3 +2890,33 @@ body { background:linear-gradient(135deg,rgba(40,116,208,.045),transparent 34%),
 #section-overview .portfolio-ppor-row td:first-child {
   color:var(--pri-dark);
 }
+
+
+/* Dashboard market intelligence — sourced facts and suburb context. */
+#section-overview .dashboard-market-intelligence {
+  margin:1rem 0; padding:1.2rem 1.25rem;
+  border:1px solid var(--bd); border-radius:1.2rem;
+  background:var(--card); box-shadow:var(--shadow);
+}
+#section-overview .dashboard-market-intelligence .section-head-row { align-items:flex-start; }
+#section-overview .dashboard-market-grid {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr));
+  gap:.7rem; margin-top:.8rem;
+}
+#section-overview .dashboard-market-item {
+  min-width:0; padding:.85rem .9rem; border:1px solid var(--bd);
+  border-radius:.85rem; background:var(--bg-accent);
+}
+#section-overview .dashboard-market-item small {
+  display:block; color:var(--muted); font-size:.62rem; font-weight:650;
+}
+#section-overview .dashboard-market-item strong {
+  display:block; margin:.28rem 0; color:var(--txt);
+  font-size:1.02rem; letter-spacing:-.035em; overflow-wrap:anywhere;
+}
+#section-overview .dashboard-market-item span {
+  display:block; color:var(--muted); font-size:.58rem; line-height:1.4;
+}
+#section-overview .dashboard-data-footnote {
+  margin-top:.8rem; color:var(--muted); font-size:.62rem; line-height:1.5;
+}
