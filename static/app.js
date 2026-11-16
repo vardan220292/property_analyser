@@ -852,17 +852,19 @@
     const props = (result && result.properties) || [], inputs = state.inputs || {};
     const money = (v) => Number.isFinite(Number(v)) ? fmtMoney(Number(v)) : '—';
     const weekly = metrics ? Number(metrics.weeklyOutOfPocket || 0) : null;
+    const annual = weekly === null ? null : weekly * 52;
     const cards = [
-      ['Purchase value', metrics ? money(metrics.purchasePrice) : '—', 'Combined purchase price', 'blue'],
-      ['Investment debt', metrics ? money(metrics.ipLoanAmount) : '—', 'Initial investment loan exposure', 'neutral'],
-      ['Cash required upfront', metrics ? money(metrics.initialCashInvested) : '—', 'Deposit and acquisition costs', 'neutral'],
-      ['Weekly after-tax position', weekly === null ? '—' : (weekly > 0 ? money(weekly) + ' out' : money(Math.abs(weekly)) + ' surplus'), 'Year one · current assumptions', weekly === null ? 'neutral' : weekly > 0 ? 'warn' : 'good'],
-      ['Gross rental yield', metrics ? fmtPct(metrics.grossYield || 0, 2) : '—', 'Combined scenario yield', 'neutral'],
-      ['10-year equity', metrics ? money(metrics.tenYearEquity) : '—', 'Projected equity at year ten', metrics && metrics.tenYearEquity >= 0 ? 'good' : 'bad']
+      ['Portfolio purchase value', metrics ? money(metrics.purchasePrice) : '—', 'Combined purchase price', 'blue'],
+      ['Investment debt', metrics ? money(metrics.ipLoanAmount) : '—', 'Initial investment loan exposure', 'violet'],
+      ['Cash required upfront', metrics ? money(metrics.initialCashInvested) : '—', 'Deposit and acquisition costs', 'amber'],
+      ['Annual after-tax position', annual === null ? '—' : (annual > 0 ? money(annual) + ' out' : money(Math.abs(annual)) + ' surplus'), 'Year one · weekly position × 52', annual === null ? 'neutral' : annual > 0 ? 'warn' : 'good'],
+      ['Gross rental yield', metrics ? fmtPct(metrics.grossYield || 0, 2) : '—', 'Combined scenario yield', 'teal'],
+      ['10-year projected equity', metrics ? money(metrics.tenYearEquity) : '—', 'Projected equity at year ten', metrics && metrics.tenYearEquity >= 0 ? 'good' : 'bad']
     ];
     root.innerHTML = cards.map(x => '<div class="portfolio-kpi ' + x[3] + '"><div class="portfolio-kpi-label">' + escapeHtml(x[0]) + '</div><div class="portfolio-kpi-value">' + escapeHtml(x[1]) + '</div><div class="portfolio-kpi-note">' + escapeHtml(x[2]) + '</div></div>').join('');
     const context = $('#portfolio-snapshot-context');
     if (context) context.textContent = inputs.scenarioName || 'Unsaved scenario';
+
     const ranked = props.map((p, i) => {
       const m = p.metrics || {}, raw = inputs.properties && inputs.properties[i] || {};
       return { label: raw.label || raw.address || ('Property ' + (i + 1)), cash: Number(m.year1AfterTaxCashFlow || 0), yield: m.grossYield };
@@ -871,10 +873,23 @@
     if (performance) performance.innerHTML = ranked.length ? ranked.map((p, i) =>
       '<div class="performance-row"><span class="performance-rank">' + (i + 1) + '</span><span class="performance-name">' + escapeHtml(p.label) + '</span><span class="performance-yield">' + (p.yield == null ? '—' : fmtPct(p.yield, 2)) + '</span><strong class="' + (p.cash >= 0 ? 'positive' : 'negative') + '">' + (p.cash >= 0 ? '+' : '−') + fmtMoney(Math.abs(p.cash)) + '/yr</strong></div>'
     ).join('') : '<div class="empty-note">Add an investment property to see its performance here.</div>';
+
+    const health = $('#dashboard-health');
+    if (health) {
+      const lvr = metrics && Number.isFinite(Number(metrics.ipLvrActual)) ? fmtPct(metrics.ipLvrActual, 1) : '—';
+      const yieldValue = metrics ? fmtPct(metrics.grossYield || 0, 2) : '—';
+      const cashValue = annual === null ? '—' : (annual > 0 ? money(annual) + ' required' : money(Math.abs(annual)) + ' surplus');
+      health.innerHTML = '<div class="dashboard-health-head"><strong>Portfolio health indicators</strong><span>Based on current assumptions</span></div>' +
+        '<div class="dashboard-health-grid">' +
+        '<div><small>Investment LVR</small><strong>' + escapeHtml(lvr) + '</strong></div>' +
+        '<div><small>Gross rental yield</small><strong>' + escapeHtml(yieldValue) + '</strong></div>' +
+        '<div><small>Annual after-tax cash</small><strong>' + escapeHtml(cashValue) + '</strong></div>' +
+        '</div>';
+    }
+
     const alerts = $('#portfolio-alerts'), warnings = (result && result.warnings || []).slice(0, 4);
     if (alerts) alerts.innerHTML = warnings.length ? warnings.map(w => '<div class="portfolio-alert"><span class="alert-dot"></span><span>' + escapeHtml(w) + '</span></div>').join('') : '<div class="portfolio-clear"><span>✓</span><div><strong>No calculation warnings</strong><small>Confirm assumptions with your lender and tax adviser before making decisions.</small></div></div>';
   }
-
   function renderDashboard(list) {
     const items = dash.items;
     const scored = items.filter((i) => i.score !== null && i.score !== undefined);
