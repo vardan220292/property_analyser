@@ -1866,10 +1866,9 @@
             },
           },
         });
-      } else {
-        if (charts['chart-ov-allocation']) { charts['chart-ov-allocation'].destroy(); delete charts['chart-ov-allocation']; }
-        const parent = allocationCanvas.closest('.chart-box');
-        if (parent) parent.classList.add('is-empty');
+      } else if (charts['chart-ov-allocation']) {
+        charts['chart-ov-allocation'].destroy();
+        delete charts['chart-ov-allocation'];
       }
     }
     drawChart('chart-ov-cum', {
