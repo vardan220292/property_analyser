@@ -2561,13 +2561,20 @@
 
     const pc = encodeURIComponent(s.postcode);
     const slug = encodeURIComponent(String(s.name).toLowerCase().replace(/\s+/g, '-'));
-    links.innerHTML = 'Check the source yourself: ' + [
+    const isVicSuburb = String(s.state || '').toUpperCase() === 'VIC';
+    const sourceLinks = isVicSuburb ? [
+      `<a href="https://www.land.vic.gov.au/valuations/resources-and-reports/property-sales-statistics" target="_blank" rel="noopener">Valuer-General Victoria sales statistics</a>`,
+      `<a href="https://www.dffh.vic.gov.au/publications/rental-report" target="_blank" rel="noopener">Homes Victoria rental report</a>`,
+      `<a href="https://discover.data.vic.gov.au/dataset/vicmap-property-rest-api" target="_blank" rel="noopener">Vicmap property data</a>`,
+      `<a href="https://discover.data.vic.gov.au/" target="_blank" rel="noopener">DataVic open datasets</a>`,
+    ] : [
       `<a href="https://www.realestate.com.au/suburb/${slug}-qld-${pc}" target="_blank" rel="noopener">REA suburb profile</a>`,
       `<a href="https://www.rta.qld.gov.au/property-and-land/rental-bond-and-housing-advice/median-rent-search" target="_blank" rel="noopener">RTA median rents</a>`,
       `<a href="https://sqmresearch.com.au/total-vacancy-search.php?postcode=${pc}&type=4" target="_blank" rel="noopener">SQM vacancy ${escapeHtml(s.postcode)}</a>`,
       `<a href="https://www.qld.gov.au/land-valuation" target="_blank" rel="noopener">QLD land valuation</a>`,
       `<a href="https://globe.qld.gov.au/" target="_blank" rel="noopener">QLD Globe</a>`,
-    ].join(' · ');
+    ];
+    links.innerHTML = 'Check the source yourself: ' + sourceLinks.join(' · ');
 
     const bandClass = 'band-' + score.band.replace(/\s+/g, '-');
     $('#score-panel').innerHTML = `
