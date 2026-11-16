@@ -3228,9 +3228,19 @@
     const data = state.compareData;
     if (!data.length) {
       $('#compare-table').innerHTML = '<tr><td>Tick scenarios above to compare side by side.</td></tr>';
-      ['chart-cmp-equity', 'chart-cmp-oop', 'chart-cmp-value'].forEach((id) => drawChart(id, { type: 'bar', data: { datasets: [] } }));
+      ['chart-cmp-equity', 'chart-cmp-oop', 'chart-cmp-value'].forEach((id) => {
+        const canvas = document.getElementById(id);
+        const box = canvas && canvas.closest('.chart-box');
+        if (box) box.classList.add('is-empty');
+        drawChart(id, { type: 'bar', data: { labels: [], datasets: [] } });
+      });
       return;
     }
+    ['chart-cmp-equity', 'chart-cmp-oop', 'chart-cmp-value'].forEach((id) => {
+      const canvas = document.getElementById(id);
+      const box = canvas && canvas.closest('.chart-box');
+      if (box) box.classList.remove('is-empty');
+    });
     const rows = [
       ['Purchase price', (r) => fmtMoney(r.metrics.purchasePrice)],
       ['Transfer duty', (r) => fmtMoney(r.metrics.transferDuty)],
