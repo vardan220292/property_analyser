@@ -2277,3 +2277,49 @@ body { background:linear-gradient(135deg,rgba(40,116,208,.045),transparent 34%),
 .dashboard-visual-card .chart-box.is-empty canvas { display:none; }
 @media(max-width:1120px) { .dashboard-visual-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .dashboard-visual-card.sale-visual { grid-column:1/-1; } }
 @media(max-width:700px) { .dashboard-visual-grid { grid-template-columns:1fr; } .dashboard-visual-card.sale-visual { grid-column:auto; } }
+
+
+/* RV Enterprise application identity */
+.navbar .brand-logo {
+  display: block;
+  width: 2.65rem;
+  height: 2.65rem;
+  flex: 0 0 2.65rem;
+  object-fit: contain;
+  border-radius: 0.55rem;
+  background: #050606;
+  box-shadow: 0 1px 3px rgba(0,0,0,.16);
+}
+.navbar .navbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .7rem;
+}
+.app-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .45rem 1.25rem;
+  padding: 1rem 1.5rem;
+  color: var(--muted);
+  font-size: .72rem;
+  line-height: 1.55;
+  border-top: 1px solid var(--bd);
+  background: var(--card);
+}
+.app-foot-credit {
+  color: var(--txt);
+  font-weight: 550;
+  white-space: nowrap;
+}
+.app-foot-credit strong {
+  color: var(--pri);
+  font-weight: 750;
+  letter-spacing: .01em;
+}
+@media (max-width: 720px) {
+  .navbar .brand-logo { width: 2.25rem; height: 2.25rem; flex-basis: 2.25rem; }
+  .app-foot { padding: .9rem 1rem; align-items: flex-start; flex-direction: column; }
+  .app-foot-credit { white-space: normal; }
+}
