@@ -138,6 +138,21 @@
           </div>
         </div>
 
+        <div class="dashboard-visual-grid">
+          <div class="section dashboard-visual-card cash-visual">
+            <div class="section-head-row"><div><div class="dash-eyebrow">CASH FLOW</div><h2>Annual cash required</h2><div class="hint">After-tax cash contribution by year. Positive bars need funding; negative bars indicate surplus.</div></div></div>
+            <div class="chart-box half-height"><canvas id="chart-ov-cash"></canvas></div>
+          </div>
+          <div class="section dashboard-visual-card allocation-visual">
+            <div class="section-head-row"><div><div class="dash-eyebrow">PORTFOLIO MIX</div><h2>Purchase allocation</h2><div class="hint">How the current purchase value is distributed across properties.</div></div></div>
+            <div class="chart-box half-height"><canvas id="chart-ov-allocation"></canvas></div>
+          </div>
+          <div class="section dashboard-visual-card sale-visual">
+            <div class="section-head-row"><div><div class="dash-eyebrow">EXIT OUTLOOK</div><h2>Estimated sale proceeds</h2><div class="hint">Sale price less selling costs, CGT and outstanding loans.</div></div></div>
+            <div class="chart-box half-height"><canvas id="chart-ov-cum"></canvas></div>
+          </div>
+        </div>
+
         <div class="dashboard-lower-grid">
           <div class="section dashboard-table-panel">
             <div class="section-head-row"><div><div class="dash-eyebrow">INVESTMENT DETAIL</div><h2>Property breakdown</h2><div class="hint">Purchase price, rent, loan exposure and projected returns.</div></div></div>
@@ -155,10 +170,7 @@
             <summary>Explore more analysis — growth, annual cash required and sale proceeds</summary>
             <div class="dashboard-detail-content">
               <div class="section"><h2>Growth scenarios</h2><div class="hint">Compare 3%, 5% and 7% capital growth with all other assumptions unchanged.</div><div class="table-wrap"><table id="growth-table"></table></div></div>
-              <div class="dashboard-decision-charts">
-                <div class="section"><h2>Annual cash required</h2><div class="hint">After-tax cash contribution by year. Positive bars are money you need to put in; negative bars are surplus. Watch for the interest-only to P&amp;I repayment change.</div><div class="chart-box half-height"><canvas id="chart-ov-cash"></canvas></div></div>
-                <div class="section"><h2>Estimated sale proceeds breakdown</h2><div class="hint">Sale price less selling costs, CGT and outstanding loans. Final bar is estimated cash received before considering cumulative holding cash flow.</div><div class="chart-box half-height"><canvas id="chart-ov-cum"></canvas></div></div>
-              </div>
+
             </div>
           </details>
         </div>
