@@ -97,9 +97,42 @@ def ensure_client_profile(user_id, ba_user_id, phone="", notes=""):
                                 notes[:2000] if notes else ""))
 
 
+def create_snapshot_presentation(ba_user_id, client_user_id, scenario_row,
+                                 title, expires_at):
+    """Insert a share snapshot of one scenario. Returns (pid, raw_token).
+    Portfolio items keep the token internal — only the portfolio's own
+    token is published to the client."""
+    token = _new_token()
+    pid = db.db().execute(
+        "INSERT INTO presentations (ba_user_id, client_user_id, scenario_id, title, "
+        "snapshot_json, share_token_hash, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)",
+        (ba_user_id, client_user_id, scenario_row["id"], title,
+         scenario_row["inputs_json"], _sha256(token), expires_at),
+    )
+    return pid, token
+
+
 # ---------------------------------------------------------------------------
 # Presentations
 # ---------------------------------------------------------------------------
+
+@bp.get("/alerts")
+@auth.require_role("ba")
+def alerts_state():
+    row = db.db().fetch_one("SELECT enabled FROM ba_alerts WHERE user_id = ?", (g.user["id"],))
+    return jsonify({"ok": True, "data": {"enabled": bool(row and row["enabled"])}})
+
+
+@bp.post("/alerts")
+@auth.require_role("ba")
+def alerts_set():
+    enabled = 1 if (request.get_json(silent=True) or {}).get("enabled") else 0
+    db.db().execute(
+        "INSERT INTO ba_alerts (user_id, enabled) VALUES (?, ?) "
+        "ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled",
+        (g.user["id"], enabled))
+    return jsonify({"ok": True, "data": {"enabled": bool(enabled)}})
+
 
 @bp.get("")
 @bp.get("/")
@@ -147,13 +180,8 @@ def create_presentation():
     ensure_client_profile(client["id"], g.user["id"], body.get("phone") or "", body.get("notes") or "")
 
     title = (body.get("title") or scenario["name"]).strip()[:MAX_TITLE]
-    token = _new_token()
-    pid = db.db().execute(
-        "INSERT INTO presentations (ba_user_id, client_user_id, scenario_id, title, "
-        "snapshot_json, share_token_hash, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)",
-        (g.user["id"], client["id"], scenario["id"], title,
-         scenario["inputs_json"], _sha256(token), _expiry(body.get("expiresInDays"))),
-    )
+    pid, token = create_snapshot_presentation(g.user["id"], client["id"], scenario,
+                                              title, _expiry(body.get("expiresInDays")))
     _log_event(pid, g.user["id"], "shared", f"Shared with {client['email']}")
     row = db.db().fetch_one("SELECT * FROM presentations WHERE id = ?", (pid,))
     data = _row_out(row)

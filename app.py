@@ -32,14 +32,18 @@ from flask import Flask, jsonify, request, send_from_directory
 
 import auth
 import areadata
+import attachments
 import comps_search
 import db
 import domain_api
+import markets
 import portal
+import portfolios
 import presentations
 import actuals
 import branding
 import qld_intel
+import sales
 import vic_intel
 import ratelimit
 import scenarios
@@ -47,6 +51,16 @@ import seeds
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+# DB_PATH says "use this SQLite file"; a non-empty DATABASE_URL (env or .env)
+# says "use Postgres" — and db.init() lets DATABASE_URL win. Silently running
+# against Postgres while the operator thinks they're on a throwaway SQLite
+# file has burned real data before, so refuse the ambiguous config.
+if os.environ.get("DB_PATH") and os.environ.get("DATABASE_URL"):
+    raise SystemExit(
+        "Both DB_PATH and DATABASE_URL are set — the app would talk to "
+        "Postgres, not DB_PATH. Unset one of them, or export DATABASE_URL= "
+        "(empty) to force the SQLite file.")
 
 PORT = int(os.environ.get("PORT", "4180"))
 HOST = os.environ.get("HOST", "127.0.0.1")
@@ -63,6 +77,7 @@ app = Flask(__name__, static_folder=None)
 # ---------------------------------------------------------------------------
 
 @app.route("/")
+@app.route("/reset")
 def index():
     return send_from_directory(STATIC_DIR, "index.html")
 
@@ -123,10 +138,14 @@ app.register_blueprint(auth.bp)
 app.register_blueprint(auth.otp_bp)
 app.register_blueprint(actuals.bp)
 app.register_blueprint(areadata.bp)
+app.register_blueprint(attachments.bp)
 app.register_blueprint(branding.bp)
+app.register_blueprint(markets.bp)
+app.register_blueprint(sales.bp)
 app.register_blueprint(comps_search.bp)
 app.register_blueprint(domain_api.bp)
 app.register_blueprint(portal.bp)
+app.register_blueprint(portfolios.bp)
 app.register_blueprint(presentations.bp)
 app.register_blueprint(presentations.clients_bp)
 app.register_blueprint(qld_intel.bp)

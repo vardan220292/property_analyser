@@ -8,6 +8,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Property proposal</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%23102f3a%27/%3E%3Ctext x=%2732%27 y=%2742%27 text-anchor=%27middle%27 font-family=%27Arial%27 font-size=%2728%27 font-weight=%27bold%27 fill=%27white%27%3EPA%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/design-system.css">
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
@@ -53,10 +54,23 @@
       </div>
     </div>
 
+    <!-- Portfolio: one link, several properties -->
+    <div id="portal-portfolio" class="section hidden">
+      <div class="portal-title-row">
+        <h1 id="pf-title">Your properties</h1>
+        <span id="pf-rollup" class="hint"></span>
+      </div>
+      <div class="hint" id="pf-sub">Your agent has shared each property with its own analysis — open one to adjust the numbers, ask questions or record your decision.</div>
+      <div id="pf-items" class="portal-list"></div>
+    </div>
+
     <!-- The presentation -->
     <div id="portal-view" class="hidden">
       <div class="portal-title-row">
-        <h1 id="p-title">Property proposal</h1>
+        <div class="portal-title-side">
+          <button id="p-back" class="btn-ghost hidden">← All properties</button>
+          <h1 id="p-title">Property proposal</h1>
+        </div>
         <span id="p-adjusted" class="badge hidden">using my numbers</span>
       </div>
 
@@ -69,6 +83,12 @@
       </section>
 
       <div id="p-cards" class="cards"></div>
+
+      <section class="section hidden" id="p-docs-sec">
+        <h2>Documents</h2>
+        <div class="hint">Your agent's due-diligence documents for this property — plans, appraisals and market reports. Open any of them; nothing is required from you.</div>
+        <div id="p-docs" class="p-docs"></div>
+      </section>
 
       <section class="section" id="p-slider-sec">
         <h2>Change the numbers</h2>
@@ -85,6 +105,37 @@
         <h2>Cash flow — first year</h2>
         <div class="hint" id="p-cf-sub"></div>
         <div class="table-wrap"><table id="p-table"></table></div>
+      </section>
+
+      <section class="section" id="p-graphs-sec">
+        <div class="portal-title-row">
+          <h2>Over the hold period</h2>
+          <label class="p-horizon">View <select id="p-horizon">
+            <option value="5">5 years</option>
+            <option value="10">10 years</option>
+            <option value="15">15 years</option>
+            <option value="20" selected>20 years</option>
+            <option value="30">30 years</option>
+          </select></label>
+        </div>
+        <div class="hint">The whole picture across your holding years — property value against debt, and the cash the investment needs or returns each year. Updates live as you change the numbers.</div>
+        <div class="p-chart-box"><canvas id="p-chart-equity"></canvas></div>
+        <div class="p-chart-box"><canvas id="p-chart-cash"></canvas></div>
+        <div class="p-chart-box"><canvas id="p-chart-whopays"></canvas></div>
+        <div class="hint" id="p-whopays-chart-cap">Who pays the holding cost each year — tenant (rent), taxman (refund) and your share.</div>
+        <div id="p-whopays-table"></div>
+      </section>
+
+      <section class="section hidden" id="p-exit-sec">
+        <h2>Exit &amp; CGT</h2>
+        <div class="hint" id="p-exit-sub"></div>
+        <div id="p-exit" class="ev-grid"></div>
+      </section>
+
+      <section class="section hidden" id="p-evidence-sec">
+        <h2>Evidence &amp; market data</h2>
+        <div class="hint">The comparables and suburb data behind this proposal.</div>
+        <div id="p-evidence"></div>
       </section>
 
       <section class="section" id="p-questions-sec">
@@ -111,8 +162,9 @@
     </div>
   </main>
 
-  <!-- Vendored locally in static/vendor/leaflet (no CDN) -->
+  <!-- Vendored locally in static/vendor (no CDN) -->
   <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/vendor/chart.umd.js"></script>
   <script src="/engine.js"></script>
   <script src="/portal.js"></script>
 </body>

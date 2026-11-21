@@ -69,3 +69,81 @@ def send_presentation_email(to_email, ba_name, title, url):
                     to_email, url)
         return False
     return True
+
+
+def send_portfolio_email(to_email, ba_name, title, item_labels, url):
+    lines = "\n".join(f"  • {label}" for label in item_labels) or "  (no properties listed)"
+    msg = EmailMessage()
+    msg["Subject"] = f"Property portfolio: {title}"
+    msg["From"] = _from()
+    msg["To"] = to_email
+    msg.set_content(
+        f"{ba_name} has prepared an investment analysis covering "
+        f"{len(item_labels)} propert{'y' if len(item_labels) == 1 else 'ies'}:\n\n"
+        f"{lines}\n\n"
+        f"Open the link to see the full portfolio:\n  {url}\n\n"
+        "Each property has its own analysis you can adjust and comment on. "
+        "No account needed — this link is your access."
+    )
+    if not _send(msg):
+        log.warning("PA_SMTP_HOST not set — portfolio link for %s logged, not emailed: %s",
+                    to_email, url)
+        return False
+    return True
+
+
+def send_activity_email(to_email, ba_name, client_name, title, event_type, body):
+    """Client-activity alert: comment / approval / change request."""
+    headings = {"comment": "New comment", "approved": "Proposal approved",
+                "changes_requested": "Changes requested"}
+    subject = f"{headings.get(event_type, 'Client activity')}: {title}"
+    detail = f"\n\n{body}\n" if body else "\n"
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = _from()
+    msg["To"] = to_email
+    msg.set_content(
+        f"{client_name} on '{title}':\n"
+        f"{headings.get(event_type, event_type)}{detail}\n"
+        f"Open your workspace to respond.\n\n— {ba_name}, via Property Analyser"
+    )
+    return _send(msg)
+
+
+def send_password_reset_email(to_email, reset_url):
+    msg = EmailMessage()
+    msg["Subject"] = "Reset your Property Analyser password"
+    msg["From"] = _from()
+    msg["To"] = to_email
+    msg.set_content(
+        "A password reset was requested for your account.\n\n"
+        f"Open this link to choose a new password:\n  {reset_url}\n\n"
+        "The link expires in 30 minutes and can be used once. If you didn't "
+        "request it, ignore this email — your password stays unchanged."
+    )
+    if not _send(msg):
+        log.warning("PA_SMTP_HOST not set — reset link for %s logged, not emailed: %s",
+                    to_email, reset_url)
+        return False
+    return True
+
+
+def send_digest_email(to_email, ba_name, days, total_views, n_props, body):
+    subject = (f"This week: {total_views} client view"
+               f"{'s' if total_views != 1 else ''} across {n_props} proposal"
+               f"{'s' if n_props != 1 else ''}")
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = _from()
+    msg["To"] = to_email
+    msg.set_content(
+        f"Client activity on your shared proposals over the last {days} days:\n\n"
+        f"{body}\n\n"
+        "Open your workspace to respond to comments.\n\n"
+        f"— Property Analyser (weekly digest for {ba_name})"
+    )
+    if not _send(msg):
+        log.warning("PA_SMTP_HOST not set — weekly digest for %s logged, not emailed",
+                    to_email)
+        return False
+    return True

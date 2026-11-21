@@ -165,6 +165,15 @@ def register():
         return jsonify({"ok": False, "error": "an account with that email already exists"}), 409
 
     user = _create_user(email, password, display_name, role=role)
+    # Onboarding answers (optional) — generic prefs so new wizard questions
+    # need no schema change.
+    for key, raw in (("goal", body.get("goal")), ("ownedCount", body.get("ownedCount"))):
+        value = str(raw or "").strip()[:60]
+        if value:
+            db.db().execute(
+                "INSERT INTO user_prefs (user_id, key, value) VALUES (?, ?, ?) "
+                "ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value",
+                (user["id"], key, value))
     return jsonify({"ok": True, "data": _user_payload(user)}), 201
 
 
@@ -269,6 +278,64 @@ def otp_verify():
     user = db.db().fetch_one("SELECT id, email, display_name, role, plan FROM users WHERE id = ?",
                              (row["id"],))
     return jsonify({"ok": True, "data": _user_payload(user)})
+
+
+# ---------------------------------------------------------------------------
+# Password reset — reuses the otp_codes table (hashed single-use token)
+# ---------------------------------------------------------------------------
+
+RESET_TTL_MINUTES = 30
+
+
+@bp.post("/forgot")
+def forgot_password():
+    if not ratelimit.hit(f"pw-forgot:{request.remote_addr}", 5, 600):
+        return jsonify({"ok": False,
+                        "error": "too many reset requests — wait a few minutes"}), 429
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    row = db.db().fetch_one("SELECT id, email, role FROM users WHERE email = ?", (email,))
+    data = {"sent": True}  # same response for unknown emails — no enumeration
+    if row and row["role"] != "client":
+        token = secrets.token_hex(24)
+        db.db().execute(
+            "INSERT INTO otp_codes (user_id, code_hash, expires_at) VALUES (?, ?, ?)",
+            (row["id"], _sha256(token),
+             (datetime.utcnow() + timedelta(minutes=RESET_TTL_MINUTES)).isoformat()))
+        base = (os.environ.get("PA_BASE_URL") or "http://127.0.0.1:4180").rstrip("/")
+        reset_url = f"{base}/reset?token={token}"
+        mailer.send_password_reset_email(row["email"], reset_url)
+        # Dev/test only: echo the link when SMTP isn't configured.
+        if os.environ.get("PA_OTP_ECHO"):
+            data["devResetUrl"] = reset_url
+    return jsonify({"ok": True, "data": data})
+
+
+@bp.post("/reset")
+def reset_password():
+    if not ratelimit.hit(f"pw-reset:{request.remote_addr}", 20, 300):
+        return jsonify({"ok": False, "error": "too many attempts — wait a few minutes"}), 429
+    body = request.get_json(silent=True) or {}
+    token = (body.get("token") or "").strip()
+    password = body.get("password") or ""
+    if len(password) < 8:
+        return jsonify({"ok": False, "error": "password must be at least 8 characters"}), 400
+    rec = db.db().fetch_one(
+        "SELECT * FROM otp_codes WHERE code_hash = ? AND consumed_at IS NULL "
+        "ORDER BY id DESC LIMIT 1", (_sha256(token),))
+    if not rec or rec["attempts"] >= OTP_MAX_ATTEMPTS:
+        return jsonify({"ok": False, "error": "wrong or expired reset link"}), 401
+    db.db().execute("UPDATE otp_codes SET attempts = attempts + 1 WHERE id = ?", (rec["id"],))
+    if datetime.utcnow() >= datetime.fromisoformat(rec["expires_at"]):
+        return jsonify({"ok": False, "error": "wrong or expired reset link"}), 401
+    user = db.db().fetch_one("SELECT id, role FROM users WHERE id = ?", (rec["user_id"],))
+    if not user or user["role"] == "client":
+        return jsonify({"ok": False, "error": "wrong or expired reset link"}), 401
+    db.db().execute("UPDATE otp_codes SET consumed_at = ? WHERE id = ?",
+                    (datetime.utcnow().isoformat(), rec["id"]))
+    db.db().execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                    (generate_password_hash(password), user["id"]))
+    return jsonify({"ok": True, "data": {"reset": True}})
 
 
 def seed_bootstrap():
