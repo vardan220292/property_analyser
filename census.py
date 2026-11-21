@@ -28,7 +28,7 @@ LAYER = ("https://services1.arcgis.com/v8Kimc579yljmjSP/arcgis/rest/services/"
 
 SNAPSHOT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "data", "markets", "census-benchmarks.json")
-SNAPSHOT_TTL = 7 * 24 * 3600
+SNAPSHOT_TTL = 24 * 3600  # benchmarks re-read daily; the ABS layer updates only when ABS publishes
 PAGE = 1000  # the service's maxRecordCount
 
 FIELDS = [
@@ -353,4 +353,5 @@ def point_endpoint():
         "overall": overall,
         "benchmarks": benchmarks,
         "source": "ABS 2021 Census (SEIFA/ERP/LEP), SA2 level",
+        "fetchedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }})

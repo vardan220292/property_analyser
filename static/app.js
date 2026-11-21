@@ -1524,7 +1524,19 @@
       </div>
       ${suburbHint}
       ${groupHtml}
-      ${bundle.source ? `<div class="source-note">${escapeHtml(bundle.source)} — area percentiles compare this SA2 with all of Australia; deal verdicts score your numbers against the linked suburb; market verdicts use your saved comparables, suburb data and the ABS price series.</div>` : ''}`;
+      ${dcSourceNote(bundle)}`;
+}
+
+  function dcSourceNote(bundle) {
+    const fetched = (bundle.fetchedAt
+      && new Date(bundle.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) || null;
+    const bits = [];
+    if (bundle.source) bits.push(escapeHtml(bundle.source));
+    bits.push('area percentiles compare this SA2 with all of Australia');
+    bits.push('deal verdicts score your numbers against the linked suburb');
+    bits.push('market verdicts use your saved comparables, suburb data and the ABS price series');
+    bits.push(fetched ? `area metrics fetched live just now (${fetched})` : 'area metrics fetch live on load');
+    return `<div class="source-note">${bits.join(' — ')}</div>`;
   }
 
   async function initDealCheckPage(force) {

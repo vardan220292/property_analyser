@@ -2601,7 +2601,8 @@
                    .filter((v) => v.score < 50).map((v) => v.question) },
     };
     return { sa2: (p.census || {}).sa2 || null,
-             verdicts, overall, source: (p.census || {}).source || null };
+             verdicts, overall, source: (p.census || {}).source || null,
+             fetchedAt: (p.census || {}).fetchedAt || null };
   }
 
   // Five-year capital-city median house growth from /api/markets/prices
