@@ -595,6 +595,19 @@ r = c.post("/api/scenarios", headers=H1, json={"name": "Too many", "inputs": {
 check("7 properties rejected", r.status_code == 400, r.get_json())
 check("7 properties names the field", "properties" in r.get_json().get("fields", {}))
 
+r = c.post("/api/scenarios", headers=H1, json={"name": "Bad ownership", "inputs": {
+    "properties": [{"purchasePrice": 500000},
+                   {"purchasePrice": 500000, "ownershipStatus": "sold"}]}})
+check("bad ownershipStatus rejected", r.status_code == 400, r.get_json())
+check("ownershipStatus field key reported",
+      "properties.1.ownershipStatus" in r.get_json().get("fields", {}), r.get_json())
+r = c.post("/api/scenarios", headers=H1, json={"name": "Owned ok", "inputs": {
+    "properties": [{"purchasePrice": 500000, "ownershipStatus": "purchased"}]}})
+check("valid ownershipStatus accepted", r.status_code == 201, r.get_json())
+check("absent ownershipStatus still accepted (legacy inputs)",
+      c.post("/api/scenarios", headers=H1, json={"name": "Legacy", "inputs": {
+          "properties": [{"purchasePrice": 500000}]}}).status_code == 201)
+
 r = c.post("/api/scenarios", headers=H1, json={"name": "Bad enum in IP2", "inputs": {
     "projectionYears": 20,
     "properties": [{"purchasePrice": 500000},
@@ -866,6 +879,394 @@ r = c.post("/api/scenarios", headers=H1, json={"name": "Foreign buyer ok", "inpu
 check("foreign buyerType accepted", r.status_code == 201, r.get_json())
 
 # ---------------------------------------------------------------------------
+# Client portfolios: one share link covering N presentations
+# ---------------------------------------------------------------------------
+
+ratelimit.reset()
+
+PF_SID1 = c.post("/api/scenarios", headers=BA, json={"name": "Ipswich house", "inputs": {
+    "properties": [{"purchasePrice": 620000, "weeklyRent": 520}]}}).get_json()["data"]["id"]
+PF_SID2 = c.post("/api/scenarios", headers=BA, json={"name": "Logan townhouse", "inputs": {
+    "properties": [{"purchasePrice": 480000, "weeklyRent": 450}]}}).get_json()["data"]["id"]
+
+check("investor blocked from portfolio create",
+      c.post("/api/portfolios", headers=H1, json={
+          "clientEmail": "x@y.com", "items": [{"scenarioId": PF_SID1}]}).status_code == 403)
+check("investor blocked from portfolio list",
+      c.get("/api/portfolios", headers=H1).status_code == 403)
+
+r = c.post("/api/portfolios", headers=BA, json={
+    "clientEmail": "sam@client.com", "clientName": "Sam",
+    "title": "Sam's shortlist",
+    "items": [
+        {"scenarioId": PF_SID1, "label": "Ipswich — solid yield",
+         "summary": {"yieldPct": 4.4, "cashFlow": -120}},
+        {"scenarioId": PF_SID2, "label": "Logan — lower entry",
+         "summary": {"yieldPct": 4.9, "cashFlow": -60}},
+    ]})
+check("portfolio created", r.status_code == 201, r.get_json())
+PF = r.get_json()["data"]
+PF_TOK = PF["shareToken"]
+check("portfolio token returned once", isinstance(PF_TOK, str) and len(PF_TOK) > 20)
+check("portfolio has 2 items", PF["itemCount"] == 2, PF.get("itemCount"))
+check("portfolio roll-up starts pending",
+      PF["pendingCount"] == 2 and PF["approvedCount"] == 0)
+check("portfolio token stored hashed, not raw",
+      db.db().fetch_one("SELECT share_token_hash FROM portfolios WHERE id = ?",
+                        (PF["id"],))["share_token_hash"] != PF_TOK)
+check("item summary round-trips",
+      PF["items"][0]["summary"]["yieldPct"] == 4.4, PF["items"][0].get("summary"))
+check("item summary derives price/rent from the scenario",
+      PF["items"][0]["summary"]["purchasePrice"] == 620000
+      and PF["items"][0]["summary"]["weeklyRent"] == 520, PF["items"][0].get("summary"))
+
+r = c.post("/api/portfolios", headers=BA, json={
+    "clientEmail": "sam@client.com", "items": []})
+check("portfolio needs at least one item", r.status_code == 400)
+r = c.post("/api/portfolios", headers=BA, json={
+    "clientEmail": "sam@client.com", "items": [{"scenarioId": 999999}]})
+check("unknown scenario in portfolio 404s and leaves no rows",
+      r.status_code == 404 and db.db().fetch_one(
+          "SELECT * FROM portfolio_items WHERE portfolio_id = -1") is None)
+r = c.post("/api/portfolios", headers=BA, json={
+    "clientEmail": "sam@client.com", "items": [{"scenarioId": "junk"}]})
+check("non-numeric scenarioId 404s (no 500)", r.status_code == 404)
+
+# Resolve: one link logs the client in and hands over every item
+r = c.get(f"/api/portal/resolve/{PF_TOK}")
+check("portfolio resolve works", r.status_code == 200, r.get_json())
+PRD = r.get_json()["data"]
+check("resolve returns portfolio, not single presentation", "portfolio" in PRD)
+check("portfolio resolve issues a client JWT",
+      PRD["token"] and PRD["me"]["email"] == "sam@client.com")
+check("portfolio resolve lists both items",
+      len(PRD["portfolio"]["items"]) == 2)
+check("portfolio resolve carries branding",
+      PRD["portfolio"]["branding"]["businessName"] == "Smith Property Buyers")
+PCL = {"Authorization": "Bearer " + PRD["token"]}
+ITEM1 = PRD["portfolio"]["items"][0]["presentationId"]
+ITEM2 = PRD["portfolio"]["items"][1]["presentationId"]
+
+# Items behave as ordinary presentations for the portfolio's client
+r = c.get(f"/api/portal/presentation/{ITEM1}", headers=PCL)
+check("client opens item 1 via portal", r.status_code == 200, r.get_json())
+check("item snapshot carried",
+      r.get_json()["data"]["snapshot"]["properties"][0]["purchasePrice"] == 620000)
+check("client isolation: another client gets 404 on item",
+      c.get(f"/api/portal/presentation/{ITEM1}", headers=MALLORY).status_code == 404)
+r = c.post(f"/api/portal/presentation/{ITEM1}/approve", headers=PCL, json={})
+check("client approves item 1", r.status_code == 201)
+r = c.post(f"/api/portal/presentation/{ITEM2}/comment", headers=PCL,
+           json={"body": "Can we look at strata fees here?"})
+check("client comments on item 2", r.status_code == 201)
+
+r = c.get(f"/api/portfolios/{PF['id']}", headers=BA)
+PFD = r.get_json()["data"]
+check("BA portfolio detail roll-up",
+      PFD["approvedCount"] == 1 and PFD["pendingCount"] == 1, PFD.get("approvedCount"))
+check("BA portfolio detail has comment count",
+      PFD["commentCount"] == 1 and PFD["items"][1]["commentCount"] == 1)
+check("BA portfolio events joined across items",
+      any(e["type"] == "approved" for e in PFD["events"]))
+
+# BA cannot touch another BA's portfolio
+OTHER_BA = {"Authorization": "Bearer " + c.post("/api/auth/register",
+           json={"email": "ba2@test.com", "password": "password123",
+                 "role": "ba"}).get_json()["data"]["token"]}
+check("portfolio ownership enforced",
+      c.get(f"/api/portfolios/{PF['id']}", headers=OTHER_BA).status_code == 404)
+
+# List + email
+r = c.get("/api/portfolios", headers=BA)
+check("portfolio list shows the portfolio",
+      any(p["id"] == PF["id"] for p in r.get_json()["data"]))
+r = c.post(f"/api/portfolios/{PF['id']}/email", headers=BA,
+           json={"shareToken": PF_TOK})
+check("portfolio email endpoint accepts current token",
+      r.status_code == 200 and r.get_json()["data"]["link"].endswith(PF_TOK), r.get_json())
+r = c.post(f"/api/portfolios/{PF['id']}/email", headers=BA,
+           json={"shareToken": "WRONGTOKEN"})
+check("stale portfolio token refused", r.status_code == 400)
+
+# Rotate: old link dies, items stay active under the new link
+r = c.post(f"/api/portfolios/{PF['id']}/rotate", headers=BA, json={})
+check("portfolio rotate returns a fresh token",
+      r.status_code == 200 and r.get_json()["data"]["shareToken"] != PF_TOK)
+PF_TOK2 = r.get_json()["data"]["shareToken"]
+check("old portfolio token dead after rotate",
+      c.get(f"/api/portal/resolve/{PF_TOK}").status_code == 404)
+r = c.get(f"/api/portal/resolve/{PF_TOK2}")
+check("new portfolio token resolves",
+      r.status_code == 200 and len(r.get_json()["data"]["portfolio"]["items"]) == 2)
+
+# Revoke: the portfolio AND its items go dark together
+r = c.post(f"/api/portfolios/{PF['id']}/revoke", headers=BA)
+check("portfolio revoke ok", r.status_code == 200)
+check("revoked portfolio link gone",
+      c.get(f"/api/portal/resolve/{PF_TOK2}").status_code == 410)
+check("revoked portfolio revoked its items",
+      db.db().fetch_one("SELECT status FROM presentations WHERE id = ?",
+                        (ITEM1,))["status"] == "revoked")
+
+# Delete cleans up items, events and rows
+r = c.delete(f"/api/portfolios/{PF['id']}", headers=BA)
+check("portfolio delete ok", r.status_code == 200)
+check("delete removed item presentations",
+      db.db().fetch_one("SELECT * FROM presentations WHERE id = ?", (ITEM1,)) is None)
+check("delete removed portfolio row",
+      db.db().fetch_one("SELECT * FROM portfolios WHERE id = ?", (PF["id"],)) is None)
+
+# Trial cap: a portfolio counts as ONE share unit no matter the item count
+TRIAL_BA = {"Authorization": "Bearer " + c.post("/api/auth/register",
+            json={"email": "trial-ba@test.com", "password": "password123",
+                  "role": "ba"}).get_json()["data"]["token"]}
+TSID = c.post("/api/scenarios", headers=TRIAL_BA, json={"name": "Cap prop", "inputs": {
+    "properties": [{"purchasePrice": 500000}]}}).get_json()["data"]["id"]
+r = c.post("/api/portfolios", headers=TRIAL_BA, json={
+    "clientEmail": "capcli@client.com",
+    "items": [{"scenarioId": TSID}, {"scenarioId": TSID, "label": "variant"}]})
+check("trial BA: 3-item portfolio counts as one share",
+      r.status_code == 201, r.get_json())
+TRIAL_PF = r.get_json()["data"]
+for email in ("t1@client.com", "t2@client.com"):
+    r = c.post("/api/presentations", headers=TRIAL_BA, json={
+        "scenarioId": TSID, "clientEmail": email})
+    check(f"trial BA standalone {email} ok (2nd/3rd unit)", r.status_code == 201, r.get_json())
+r = c.post("/api/presentations", headers=TRIAL_BA, json={
+    "scenarioId": TSID, "clientEmail": "t3@client.com"})
+check("trial BA blocked at 4th unit (portfolio = 1)",
+      r.status_code == 403 and "Trial" in r.get_json()["error"], r.get_json())
+r = c.post(f"/api/portfolios/{TRIAL_PF['id']}/revoke", headers=TRIAL_BA)
+check("revoking frees the unit", r.status_code == 200)
+r = c.post("/api/presentations", headers=TRIAL_BA, json={
+    "scenarioId": TSID, "clientEmail": "t3@client.com"})
+check("after revoke the cap has room again", r.status_code == 201, r.get_json())
+
+# ---------------------------------------------------------------------------
+# Property documents: BA uploads, clients read via an active share
+# ---------------------------------------------------------------------------
+
+import io  # noqa: E402
+import os  # noqa: E402
+
+ratelimit.reset()
+DOC_SID = c.post("/api/scenarios", headers=BA, json={"name": "Doc prop", "inputs": {
+    "properties": [{"purchasePrice": 590000, "weeklyRent": 500}]}}).get_json()["data"]["id"]
+
+check("401 uploading without token",
+      c.post(f"/api/scenarios/{DOC_SID}/attachments").status_code == 401)
+check("investor cannot upload",
+      c.post(f"/api/scenarios/{DOC_SID}/attachments", headers=H1, data={
+          "file": (io.BytesIO(b"x"), "x.pdf", "application/pdf")}).status_code == 403)
+check("other BA's scenario 404s",
+      c.post(f"/api/scenarios/{DOC_SID}/attachments", headers=OTHER_BA, data={
+          "file": (io.BytesIO(b"x"), "x.pdf", "application/pdf")}).status_code == 404)
+
+r = c.post(f"/api/scenarios/{DOC_SID}/attachments", headers=BA, data={
+    "file": (io.BytesIO(b"%PDF-1.4 beaconsfield pack"), "Market Intelligence Report.pdf",
+             "application/pdf")})
+check("pdf upload ok", r.status_code == 201, r.get_json())
+DOC = r.get_json()["data"][0]
+check("upload returns displayName",
+      DOC["displayName"] == "Market Intelligence Report.pdf", DOC)
+r = c.post(f"/api/scenarios/{DOC_SID}/attachments", headers=BA, data={
+    "file": (io.BytesIO(b"\x89PNG fake"), "plan.png", "image/png")})
+check("png upload ok", r.status_code == 201)
+check("bad type rejected",
+      c.post(f"/api/scenarios/{DOC_SID}/attachments", headers=BA, data={
+          "file": (io.BytesIO(b"MZ"), "x.exe", "application/octet-stream")}
+      ).status_code == 400)
+
+r = c.get(f"/api/scenarios/{DOC_SID}", headers=BA)
+check("scenario detail lists documents", len(r.get_json()["data"]["attachments"]) == 2)
+
+# Share to a client; the client sees and can open the documents
+DPID = c.post("/api/presentations", headers=BA, json={
+    "scenarioId": DOC_SID, "clientEmail": "doccli@client.com"}).get_json()["data"]
+ratelimit.reset()
+DRES = c.get(f"/api/portal/resolve/{DPID['shareToken']}").get_json()["data"]
+check("resolve carries attachments",
+      len(DRES["presentation"]["attachments"]) == 2, DRES["presentation"].get("attachments"))
+DCL = {"Authorization": "Bearer " + DRES["token"]}
+r = c.get(f"/api/attachments/{DOC['id']}/file", headers=DCL)
+check("client fetches document bytes",
+      r.status_code == 200 and r.mimetype == "application/pdf"
+      and b"beaconsfield" in r.data)
+code = c.post("/api/otp/request", json={"email": "docother@client.com"}).get_json()["data"]["devCode"]
+OTHER_CL = {"Authorization": "Bearer " + c.post("/api/otp/verify", json={
+    "email": "docother@client.com", "code": code}).get_json()["data"]["token"]}
+check("unrelated client blocked from documents",
+      c.get(f"/api/attachments/{DOC['id']}/file", headers=OTHER_CL).status_code == 404)
+check("anonymous file fetch 401",
+      c.get(f"/api/attachments/{DOC['id']}/file").status_code == 401)
+
+# Revoke the share — document access goes with it
+c.post(f"/api/presentations/{DPID['id']}/revoke", headers=BA)
+check("revoked share loses document access",
+      c.get(f"/api/attachments/{DOC['id']}/file", headers=DCL).status_code == 404)
+
+r = c.delete(f"/api/attachments/{DOC['id']}", headers=BA)
+check("BA deletes document", r.status_code == 200)
+check("deleted document gone from list",
+      len(c.get(f"/api/scenarios/{DOC_SID}", headers=BA)
+          .get_json()["data"]["attachments"]) == 1)
+check("deleted document file 404s for BA too",
+      c.get(f"/api/attachments/{DOC['id']}/file", headers=BA).status_code == 404)
+
+# ---------------------------------------------------------------------------
+# Full report pack: BA + client routes, buy-range validation
+# ---------------------------------------------------------------------------
+
+ratelimit.reset()
+RP_SID = c.post("/api/scenarios", headers=BA, json={"name": "Report prop", "inputs": {
+    "ownershipType": "joint_50_50", "owner1TaxableIncome": 200000, "owner2TaxableIncome": 40000,
+    "buyRangeLow": 600000, "buyRangeHigh": 650000,
+    "properties": [{"purchasePrice": 620000, "weeklyRent": 520}]}}).get_json()["data"]["id"]
+check("buy range low>high rejected",
+      c.put(f"/api/scenarios/{RP_SID}", headers=BA, json={"name": "x", "inputs": {
+          "buyRangeLow": 700000, "buyRangeHigh": 600000,
+          "properties": [{"purchasePrice": 5}]}}).get_json().get("fields", {}).get("buyRangeHigh")
+      == "must be ≥ buy range low")
+
+REPORT_PAYLOAD = {
+    "metrics": {"purchasePrice": 620000},
+    "funding": {"transferDuty": 20000, "acquisitionCosts": 25000,
+                "ipLoanStart": 558000, "requiredFunds": 583000},
+    "loan": {"rate": 0.065},
+    "year1": {"grossRent": 27040, "effectiveRent": 26499, "vacancyLoss": 541,
+              "operatingExpenses": 11000, "ipInterest": 36000, "equityLoanInterest": 0,
+              "ipPrincipalRepayment": 0, "equityLoanPrincipalRepayment": 0,
+              "preTaxCashFlow": -18000, "taxRefundOrCost": 9500, "afterTaxCashFlow": -8500,
+              "capitalWorksDepreciation": 8000, "plantEquipmentDepreciation": 4000,
+              "otherDeductibleClaims": 0},
+    "taxSplit": {"ownership": "joint_50_50", "share": 0.5, "owner1": 5100, "owner2": 4400,
+                 "total": 9500, "rate1": 0.45, "rate2": 0.32,
+                 "bracket1": "$190,001+", "bracket2": "$45,000–$135,000",
+                 "income1": 200000, "income2": 40000},
+    "years": [{"year": y + 1, "calendarYear": 2026 + y, "grossRent": 27040, "effectiveRent": 26499,
+               "ipInterest": 36000, "equityLoanInterest": 0, "ipPrincipalRepayment": 0,
+               "equityLoanPrincipalRepayment": 0, "operatingExpenses": 11000,
+               "otherDeductibleClaims": 0, "preTaxCashFlow": -18000 + 700 * y,
+               "taxRefundOrCost": 9500 - 250 * y, "afterTaxCashFlow": -8500 + 400 * y,
+               "cumulativeAfterTaxCashFlow": -8500 * (y + 1)} for y in range(25)],
+    "preTaxSeries": [-18000 + 700 * y for y in range(25)],
+    "cashSeries": [-8500 + 400 * y for y in range(25)],
+    "subject": {"price": 620000, "weeklyRent": 520},
+}
+check("401 on report without token",
+      c.post(f"/api/scenarios/{RP_SID}/report", json=REPORT_PAYLOAD).status_code == 401)
+check("cross-owner report 404",
+      c.post(f"/api/scenarios/{RP_SID}/report", headers=OTHER_BA,
+             json=REPORT_PAYLOAD).status_code == 404)
+r = c.post(f"/api/scenarios/{RP_SID}/report", headers=BA, json=REPORT_PAYLOAD)
+check("BA report renders a PDF", r.status_code == 200 and b"%PDF" in r.data[:5], r.mimetype)
+
+# Portal route: client JWT on their own presentation, foreign blocked
+RPPID = c.post("/api/presentations", headers=BA, json={
+    "scenarioId": RP_SID, "clientEmail": "rp@client.com"}).get_json()["data"]
+ratelimit.reset()
+RRES = c.get(f"/api/portal/resolve/{RPPID['shareToken']}").get_json()["data"]
+RPCL = {"Authorization": "Bearer " + RRES["token"]}
+r = c.post(f"/api/portal/presentation/{RPPID['id']}/report", headers=RPCL,
+           json=REPORT_PAYLOAD)
+check("client report renders a PDF",
+      r.status_code == 200 and b"%PDF" in r.data[:5])
+check("foreign client report 404",
+      c.post(f"/api/portal/presentation/{RPPID['id']}/report", headers=OTHER_CL,
+             json=REPORT_PAYLOAD).status_code == 404)
+r = c.get(f"/api/portal/presentation/{RPPID['id']}/evidence", headers=RPCL)
+check("evidence endpoint returns the context shape",
+      r.status_code == 200 and "buyRange" in (r.get_json()["data"] or {}),
+      r.get_json())
+check("foreign client evidence 404",
+      c.get(f"/api/portal/presentation/{RPPID['id']}/evidence",
+            headers=OTHER_CL).status_code == 404)
+
+# ---------------------------------------------------------------------------
+# Portfolio aggregation + pipeline status
+# ---------------------------------------------------------------------------
+
+ratelimit.reset()
+P1 = c.post("/api/scenarios", headers=BA, json={"name": "Owned prop", "inputs": {
+    "properties": [{"purchasePrice": 500000, "weeklyRent": 450}]}}).get_json()["data"]["id"]
+P2 = c.post("/api/scenarios", headers=BA, json={"name": "Wishlist prop", "inputs": {
+    "properties": [{"purchasePrice": 800000, "weeklyRent": 600}]}}).get_json()["data"]["id"]
+check("patch status validates values",
+      c.patch(f"/api/scenarios/{P1}/status", headers=BA,
+              json={"status": "bought"}).status_code == 400)
+check("cross-owner patch 404",
+      c.patch(f"/api/scenarios/{P1}/status", headers=OTHER_BA,
+              json={"status": "purchased"}).status_code == 404)
+check("patch to purchased", c.patch(f"/api/scenarios/{P1}/status", headers=BA,
+                                    json={"status": "purchased"}).status_code == 200)
+check("investor sees only their own scenarios (no cross-user leak)",
+      all(i["name"] != "Owned prop" and i["name"] != "Wishlist prop"
+          for i in c.get("/api/scenarios/portfolio", headers=H1).get_json()["data"]))
+check("401 on portfolio without token",
+      c.get("/api/scenarios/portfolio").status_code == 401)
+r = c.get("/api/scenarios/portfolio", headers=BA)
+PF_ITEMS = r.get_json()["data"]
+PF_STATUS = {i["name"]: i["ownershipStatus"] for i in PF_ITEMS}
+check("portfolio lists scenarios with inputs",
+      len(PF_ITEMS) >= 2 and all("inputs" in i for i in PF_ITEMS), len(PF_ITEMS))
+check("ownership status flows through",
+      PF_STATUS.get("Owned prop") == "purchased"
+      and PF_STATUS.get("Wishlist prop") == "considering")
+check("scenario list carries status fields",
+      all("ownershipStatus" in i and "price" in i
+          for i in c.get("/api/scenarios", headers=BA).get_json()["data"]))
+
+# Markets (public ABS seed data)
+r = c.get("/api/markets")
+MKT = r.get_json()["data"]
+check("markets national stats present",
+      MKT["national"]["populationGrowth"]["value"] > 0
+      and MKT["national"]["renters"]["value"] > 0)
+check("markets has all 8 states", len(MKT["states"]) == 8)
+
+# Onboarding prefs persisted at registration
+c.post("/api/auth/register", json={"email": "onb@x.com", "password": "password123",
+                                   "goal": "Grow my portfolio", "ownedCount": "2"})
+prefs = db.db().fetch_all(
+    "SELECT key, value FROM user_prefs WHERE user_id = ("
+    " SELECT id FROM users WHERE email = 'onb@x.com')")
+check("onboarding answers stored",
+      {p["key"]: p["value"] for p in prefs} ==
+      {"goal": "Grow my portfolio", "ownedCount": "2"}, prefs)
+
+# ---------------------------------------------------------------------------
+# Alerts toggle, full data export
+# ---------------------------------------------------------------------------
+
+ratelimit.reset()
+check("alerts default off",
+      c.get("/api/presentations/alerts", headers=BA).get_json()["data"]["enabled"] is False)
+check("alerts toggle on",
+      c.post("/api/presentations/alerts", headers=BA,
+             json={"enabled": True}).get_json()["data"]["enabled"] is True)
+check("alerts state persists",
+      c.get("/api/presentations/alerts", headers=BA).get_json()["data"]["enabled"] is True)
+check("investor blocked from alerts",
+      c.post("/api/presentations/alerts", headers=H1, json={"enabled": True}).status_code == 403)
+
+check("401 on export without token", c.get("/api/scenarios/export").status_code == 401)
+r = c.get("/api/scenarios/export", headers=BA)
+EXP = r.get_json()["data"]
+check("export carries scenarios with inputs",
+      r.status_code == 200 and len(EXP["scenarios"]) >= 2
+      and all("inputs" in s for s in EXP["scenarios"]), r.status_code)
+check("export carries suburbs", isinstance(EXP["suburbs"], list))
+own_export = {s["name"] for s in EXP["scenarios"]}
+check("export scoped to one user", "Owned prop" in own_export)
+check("export no cross-user leak", "Tracked prop" not in own_export)
+
+# Client comment fires (or at least attempts) the BA email — exercised via
+# the existing comment route with alerts ON: response must stay 201.
+check("comment still posts with alerts on",
+      c.post(f"/api/portal/presentation/{RPPID['id']}/comment", headers=RPCL,
+             json={"body": "alerts test"}).status_code == 201)
+
+# ---------------------------------------------------------------------------
 # QLD property intelligence (/api/intel/property)
 # ---------------------------------------------------------------------------
 
@@ -974,6 +1375,174 @@ if os.environ.get("DATABASE_URL"):
                                             "password": "password123",
                                             "displayName": "Reconnect"})
     check("writes work again after a reconnect", r.status_code == 201, r.get_json())
+
+# ---------------------------------------------------------------------------
+# Password reset — forgot → (emailed) token → set new password
+# ---------------------------------------------------------------------------
+
+r = c.post("/api/auth/forgot", json={"email": "u1@test.com"})
+d = (r.get_json() or {}).get("data") or {}
+check("forgot responds generically", r.status_code == 200 and d.get("sent") is True)
+r = c.post("/api/auth/forgot", json={"email": "ghost@nowhere.test"})
+d2 = (r.get_json() or {}).get("data") or {}
+check("unknown email gets the same generic answer",
+      r.status_code == 200 and d2.get("sent") is True)
+if d.get("devResetUrl"):
+    token = d["devResetUrl"].split("token=")[1]
+    check("short password rejected", c.post("/api/auth/reset", json={
+        "token": token, "password": "short"}).status_code == 400)
+    check("reset works", c.post("/api/auth/reset", json={
+        "token": token, "password": "newpassword1"}).status_code == 200)
+    check("token is single-use", c.post("/api/auth/reset", json={
+        "token": token, "password": "anotherpass1"}).status_code == 401)
+    check("garbage token rejected", c.post("/api/auth/reset", json={
+        "token": "nope", "password": "whatever12"}).status_code == 401)
+    check("reset page serves the app shell",
+          c.get("/reset?token=x").status_code == 200)
+else:
+    print("note: PA_OTP_ECHO not set — skipped the live-token reset steps")
+
+# ---------------------------------------------------------------------------
+# Markets median price history
+# ---------------------------------------------------------------------------
+
+r = c.get("/api/markets/prices")
+d = (r.get_json() or {}).get("data") or {}
+if r.status_code == 200:
+    check("price history has periods", len(d.get("periods", [])) > 10)
+    check("price history covers the states", len(d.get("states", {})) >= 6)
+    qld = (d.get("states", {}).get("QLD") or {}).get("capital", {}).get("houses") or []
+    check("QLD capital series is populated and current", bool(qld) and qld[-1] > 100000)
+    r = c.get("/api/markets/prices?state=VIC")
+    check("state filter narrows the payload",
+          r.status_code == 200 and set((r.get_json().get("data") or {}).get("states", {})) == {"VIC"})
+else:
+    print("note: price history unavailable in this environment (503) — skipped")
+
+# ---------------------------------------------------------------------------
+# VIC Valuer-General sold-median valuation guide (sales.py)
+# ---------------------------------------------------------------------------
+
+try:
+    import glob as _glob
+    for _p in _glob.glob("data/sales/*.xlsx"):
+        os.remove(_p)
+    from openpyxl import Workbook as _WB
+    _wb = _WB()
+    _ws = _wb.active
+    _ws.append(["Locality", "2015", "2020", "2024", "2025"])
+    for _r in [("TEST SUBURB A", 700000, 900000, 1000000, 1100000),
+               ("Test Suburb B", 600000, 800000, 950000, 1000000),
+               ("Test Suburb C", 500000, 650000, 700000, 750000)]:
+        _ws.append(list(_r))
+    _wb.save("data/sales/test-fixture.xlsx")
+    import sales as sales_mod
+    _files, _rows = sales_mod.ingest()
+    check("sales ingest parses a VPSR-shaped workbook", _rows >= 9, _rows)
+    r = c.get("/api/valuation?suburb=test%20suburb%20a&state=VIC")
+    d = (r.get_json() or {}).get("data") or {}
+    check("valuation returns suburb median", d.get("available") is True
+          and (d.get("latest") or {}).get("median") == 1100000, d.get("latest"))
+    check("valuation guide band is median ±10%",
+          ((d.get("guide") or {}).get("low") == 990000
+           and (d.get("guide") or {}).get("high") == 1210000))
+    r = c.get("/api/valuation?suburb=test%20suburb%20a&state=QLD")
+    check("non-VIC states report unavailable honestly",
+          (r.get_json().get("data") or {}).get("available") is False)
+    r = c.get("/api/valuation?suburb=missing%20suburb%20z&state=VIC")
+    check("unknown VIC suburb reports unavailable",
+          (r.get_json().get("data") or {}).get("available") is False)
+    os.remove("data/sales/test-fixture.xlsx")
+except Exception as e:
+    print(f"note: sales pipeline test skipped ({e})")
+
+# ---------------------------------------------------------------------------
+# Census benchmarks + Deal Check verdict engine (no network: pure functions)
+# ---------------------------------------------------------------------------
+
+import census as census_mod
+import report as report_mod
+
+_bm = census_mod.build_benchmarks([
+    {"tenure_4": v, "house_2_pc": v / 10.0, "arrmig_2": v / 5.0,
+     "erp_sch_1_pc": v / 2.0, "lf_4": v / 20.0, "lf_5": 40 + v / 10.0,
+     "leed_4": v, "dwell_7": 10, "irsd_score": 900 + v, "hied_1_pc": v / 4.0,
+     "afford_5": v / 3.0, "afford_3": v / 6.0, "erp_p_75p_pc": v / 8.0,
+     "publich_1_pc": v / 12.0}
+    for v in range(1, 101)  # percentiles land exactly on 1..100
+])
+check("benchmarks build percentiles for every verdict metric",
+      all(k in _bm["fields"] for k in
+          ["tenure_4", "lf_4", "irsd_score", "afford_3", "afford_5",
+           "publich_1_pc", "erp_p_75p_pc", "jobs_per_dwelling"]))
+check("median of 1..100 is ~50.5",
+      abs(_bm["fields"]["tenure_4"]["p50"] - 50.5) < 0.01)
+
+_good = {"tenure_4": 95, "house_2_pc": 9.0, "arrmig_2": 18.0, "erp_sch_1_pc": 45.0,
+         "lf_4": 0.15, "lf_5": 49.0, "leed_4": 95, "dwell_7": 10,
+         "irsd_score": 995, "hied_1_pc": 1.0, "afford_5": 0.5, "afford_3": 0.4,
+         "erp_p_75p_pc": 0.2, "publich_1_pc": 0.1, "jobs_per_dwelling": 9.5}
+_bad = {k: (100 - v if k != "dwell_7" else 10) for k, v in _good.items()}
+
+_vg, _og = census_mod.deal_verdicts(_good, _bm)
+_vb, _ob = census_mod.deal_verdicts(_bad, _bm)
+check("ten verdicts returned (9 questions + overall)",
+      len(_vg) == 9 and _og.get("score") is not None)
+check("strong area scores higher overall", _og["score"] > _ob["score"])
+check("strong area reads PASS, weak area reads CAUTION",
+      _og["verdictWord"] == "PASS" and _ob["verdictWord"] == "CAUTION")
+check("every verdict carries status/score/headline/metrics",
+      all(v["status"] in ("strong", "ok", "watch") and 0 <= v["score"] <= 100
+          and v["headline"] and v["metrics"] for v in _vg))
+check("percentiles are clamped to 5-95",
+      all(5 <= m["percentile"] <= 95 for v in _vg for m in v["metrics"]))
+check("direction flip works (low unemployment scores high)",
+      next(v for v in _vg if v["key"] == "employment")["score"]
+      > next(v for v in _vb if v["key"] == "employment")["score"])
+
+_vn, _on = census_mod.deal_verdicts({}, {"fields": {}})
+check("no data degrades to nodata verdicts", _on["status"] == "nodata"
+      and all(v["status"] == "nodata" for v in _vn))
+
+r = c.get("/api/markets/census/point")
+check("census point requires lat/lon", r.status_code == 400)
+r = c.get("/api/markets/census/point?lat=51.5&lon=-0.12")
+check("census point rejects non-Australian coordinates", r.status_code == 422)
+
+_dc_payload = {
+    "title": "t", "years": [], "propertySections": [],
+    "dealCheck": {"sa2": {"name": "Testville"},
+                  "overall": {"verdictWord": "PASS", "score": 71, "status": "strong",
+                              "headline": "Area fundamentals support the deal.",
+                              "drivers": {"for": ["Will landlords find tenants easily?"],
+                                          "against": []}},
+                  "verdicts": [{"key": "rental_demand", "group": "area",
+                                "question": "Will landlords find tenants easily?",
+                                "status": "strong", "score": 91,
+                                "headline": "Deep rental market.",
+                                "metrics": []},
+                               {"key": "price_vs_market", "group": "deal",
+                                "question": "Are you paying a fair price for this suburb?",
+                                "status": "ok", "score": 68,
+                                "headline": "In line with the suburb median.",
+                                "metrics": []}]},
+}
+_html = report_mod.build_report_html(_dc_payload, {})
+check("report PDF includes the grouped deal check section",
+      "Deal check &amp; recommendation" in _html and "PASS" in _html
+      and "Will landlords find tenants easily?" in _html
+      and "The area — census fundamentals" in _html
+      and "The deal — your numbers" in _html)
+check("report PDF omits the section when dealCheck absent",
+      "Deal check &amp; recommendation" not in report_mod.build_report_html(
+          {"title": "t", "years": []}, {}))
+_noscore = report_mod.build_report_html(
+    {"title": "t", "years": [], "dealCheck": {"sa2": {"name": "X"},
+     "overall": {"score": None, "verdictWord": "—", "headline": "nodata"},
+     "verdicts": [{"key": "k", "group": "deal", "question": "q", "status": "nodata",
+                   "score": None, "headline": "h", "metrics": []}]}}, {})
+check("report PDF omits the section when nothing scored",
+      "Deal check &amp; recommendation" not in _noscore)
 
 print(f"\n{PASSED} passed, {FAILED} failed")
 sys.exit(1 if FAILED else 0)

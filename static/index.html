@@ -31,6 +31,7 @@
 
       <nav id="nav" aria-label="Main navigation">
         <a data-target="overview" class="active nav-primary">Dashboard</a>
+        <a data-target="portfolio" class="nav-primary">Portfolio</a>
         <details class="nav-group">
           <summary>Analyse</summary>
           <div class="nav-menu">
@@ -47,6 +48,11 @@
           <div class="nav-menu">
             <a data-target="property">Property intelligence</a>
             <a data-target="area">Area &amp; suburb</a>
+            <a data-target="dealcheck">Deal check</a>
+            <a data-target="location">Location IQ</a>
+            <a data-target="heatmaps">Heat maps</a>
+            <a data-target="markets">Markets</a>
+            <a data-target="tools">Tools</a>
           </div>
         </details>
         <details class="nav-group">
@@ -358,6 +364,13 @@
                 <div class="addr-matched hidden" id="address-matched"></div></div>
               <div class="field"><label>Purchase price <span class="unit">$</span></label>
                 <input type="number" data-field="purchasePrice"></div>
+              <div class="field"><label>Ownership status</label>
+                <select data-field="ownershipStatus">
+                  <option value="considering">Considering</option>
+                  <option value="under_offer">Under offer</option>
+                  <option value="purchased">Purchased</option>
+                </select>
+                <div class="hint">Only purchased properties count toward portfolio totals</div></div>
               <div class="field"><label>Weekly rent <span class="unit">$/wk</span></label>
                 <input type="number" data-field="weeklyRent"></div>
               <div class="field"><label>Bedrooms</label>
@@ -509,6 +522,7 @@
       <!-- ==================== PROPERTY INTELLIGENCE ==================== -->
       <section id="section-property" class="section-page">
         <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">PROPERTY INTELLIGENCE</div><h1 class="page-title">Understand the property</h1><div class="page-description">Explore parcel boundaries, planning context and available hazard layers. Government data availability varies by location; review source notes before relying on a layer.</div></div></div>
+        <div id="prop-tabs-intel" class="prop-tabs" aria-label="Investment properties"></div>
         <div class="section">
           <h2>Property map</h2>
           <div class="hint">Live government spatial data for the selected address. Available parcel, planning and hazard layers depend on the state. Pick the address from the dropdown in Inputs (or type the full address) first.</div>
@@ -533,8 +547,20 @@
           <h2>What the government data says</h2>
           <div class="hint">Government and open-data attributes for this address. Missing information is left blank rather than estimated.</div>
           <div id="property-cards" class="cards"></div>
+          <div id="valuation-guide"></div>
           <div id="property-details" class="kv-grid"></div>
           <div id="property-sources" class="source-note"></div>
+        </div>
+
+        <div class="section">
+          <h2>Documents</h2>
+          <div class="hint">Due-diligence documents for this property — plans, appraisals, market reports. Clients you share this property with can open them from their link.</div>
+          <div class="portal-actions">
+            <input type="file" id="doc-file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" hidden>
+            <button id="doc-add" class="btn-ghost">+ Upload documents</button>
+            <span id="doc-msg" class="source-note"></span>
+          </div>
+          <div id="doc-list" class="doc-list"></div>
         </div>
       </section>
 
@@ -568,7 +594,8 @@
               <span id="comp-search-msg" class="source-note"></span></div>
           </div>
           <div class="grid-form" id="comp-form">
-            <div class="field"><label>Address</label><input type="text" autocomplete="off" id="comp-address"></div>
+            <div class="field addr-field"><label>Address</label><input type="text" autocomplete="off" id="comp-address">
+              <div id="comp-addr-dropdown" class="addr-dropdown hidden"></div></div>
             <div class="field"><label>Sold price <span class="unit">$</span></label><input type="number" id="comp-price"></div>
             <div class="field"><label>Sold date</label><input type="text" autocomplete="off" id="comp-date" placeholder="2026-08"></div>
             <div class="field"><label>Beds</label><input type="number" id="comp-beds"></div>
@@ -585,7 +612,8 @@
           <h2>Comparable rentals</h2>
           <div class="hint">Manually captured rental evidence near the property — paste from a listing and compare against your rent assumption.</div>
           <div class="grid-form" id="rental-form">
-            <div class="field"><label>Address</label><input type="text" autocomplete="off" id="rental-address"></div>
+            <div class="field addr-field"><label>Address</label><input type="text" autocomplete="off" id="rental-address">
+              <div id="rental-addr-dropdown" class="addr-dropdown hidden"></div></div>
             <div class="field"><label>Rent <span class="unit">$/wk</span></label><input type="number" id="rental-rent"></div>
             <div class="field"><label>Beds</label><input type="number" id="rental-beds"></div>
             <div class="field"><label>Type</label>
@@ -634,6 +662,12 @@
             <div style="margin-top:10px"><button id="btn-add-suburb">Add suburb</button></div>
           </details>
         </div>
+      </section>
+
+      <!-- ==================== DEAL CHECK ==================== -->
+      <section id="section-dealcheck" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">DEAL CHECK</div><h1 class="page-title">Deal check</h1><div class="page-description">Two halves, one verdict: the area scored against every SA2 in Australia (2021 Census), and your deal numbers scored against the linked suburb. Nine questions on demand and downside, six on price, yield and vacancy.</div></div></div>
+        <div class="section" id="dc-body"></div>
       </section>
 
       <!-- ==================== CASH FLOW ==================== -->
@@ -741,7 +775,11 @@
         <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">PORTFOLIO DECISIONS</div><h1 class="page-title">Scenarios &amp; comparisons</h1><div class="page-description">Review saved investment cases side by side and compare the financial outcomes using consistent assumptions.</div></div></div>
         <div class="section">
           <h2>Saved scenarios</h2>
-          <div class="table-wrap"><table id="scn-table"></table></div>
+          <div class="hint">Everything below is yours — scenarios, comparables, actuals and suburbs. Take a JSON backup any time.</div>
+          <div class="portal-actions">
+            <div class="table-wrap"><table id="scn-table"></table></div>
+            <button id="btn-export-data" class="btn-ghost">Export all data (JSON)</button>
+          </div>
         </div>
         <div class="section">
           <h2>Compare (tick up to 3)</h2>
@@ -784,7 +822,9 @@
 
         <div class="section">
           <h2>Actual vs projected</h2>
-          <div class="hint">Projected figures come from the engine at each period's calendar year. Empty optional fields don't show a variance.</div>
+          <div class="hint" id="actuals-hint">What actually happened each period, compared against the engine's projection for the same calendar year.</div>
+          <div class="cards" id="act-compare"></div>
+          <div class="chart-box"><canvas id="act-chart"></canvas></div>
           <div class="table-wrap"><table id="actuals-table"></table></div>
         </div>
       </section>
@@ -809,6 +849,7 @@
             <span id="ws-logo-msg" class="source-note"></span>
             <button id="ws-upgrade" class="btn-ghost">Upgrade to Pro</button>
             <span id="ws-plan-msg" class="source-note"></span>
+            <label class="check-field"><input type="checkbox" id="ws-alerts"> Email me client activity</label>
           </div>
         </div>
 
@@ -847,13 +888,182 @@
         </div>
 
         <div class="section">
+          <h2>Share a client portfolio</h2>
+          <div class="hint">Tick several properties for one client and share them behind a single link — the client sees every property and a decision roll-up. Each property keeps its own comments, approvals and PDF.</div>
+          <div class="grid-form" id="ws-pf-form">
+            <div class="field"><label>Client</label><select id="ws-pf-client"></select></div>
+            <div class="field"><label>Portfolio title <span class="unit">optional</span></label><input type="text" autocomplete="off" id="ws-pf-title" placeholder="e.g. Sam's shortlist — November"></div>
+            <div class="field"><label>Link expires <span class="unit">days, 0 = never</span></label><input type="number" id="ws-pf-expiry" value="30"></div>
+          </div>
+          <div class="field"><label>Properties to include</label><div id="ws-pf-items" class="ws-pf-items"></div></div>
+          <div class="portal-actions">
+            <button id="ws-pf-create" class="primary">Create portfolio link</button>
+            <span id="ws-pf-count" class="source-note"></span>
+          </div>
+          <div id="ws-pf-new-link" class="hidden">
+            <div class="field"><label>Portfolio link (copied to clipboard, shown once)</label>
+              <input type="text" autocomplete="off" id="ws-pf-link" readonly></div>
+            <div class="portal-actions">
+              <input type="email" id="ws-pf-email" placeholder="client email">
+              <button id="ws-pf-email-send" class="btn-ghost">Email link</button>
+              <span id="ws-pf-email-msg" class="source-note"></span>
+            </div>
+            <div class="source-note">Anyone with this link sees every property in the portfolio as this client — send it to them privately.</div>
+          </div>
+        </div>
+
+        <div class="section">
           <h2>All shared properties</h2>
           <div class="table-wrap"><table id="ws-presentations"></table></div>
+        </div>
+
+        <div class="section">
+          <h2>Client portfolios</h2>
+          <div class="table-wrap"><table id="ws-portfolios"></table></div>
         </div>
 
         <div class="section hidden" id="ws-activity-box">
           <h2 id="ws-activity-title">Activity</h2>
           <div id="ws-events" class="kv"></div>
+        </div>
+      </section>
+
+      <!-- ==================== PORTFOLIO ==================== -->
+      <section id="section-portfolio" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">MY PORTFOLIO</div><h1 class="page-title">Where you stand</h1><div class="page-description">Everything you own, owe and could borrow against — aggregated across your purchased properties, with the next 15 years projected.</div></div></div>
+        <div class="section">
+          <div class="cards" id="pfo-stats"></div>
+        </div>
+        <div class="section">
+          <h2>Net worth — now and the next 15 years</h2>
+          <div class="hint">Today's position, then every purchased property projected together.</div>
+          <div class="chart-box"><canvas id="pfo-chart"></canvas></div>
+        </div>
+        <div class="section">
+          <h2>Own &amp; owe</h2>
+          <div class="hint">Year-one figures for each purchased property, from its saved scenario.</div>
+          <div class="table-wrap"><table id="pfo-table"></table></div>
+        </div>
+        <div class="section">
+          <h2>Pipeline</h2>
+          <div class="hint">Move a property through considering → under offer → purchased. Purchased properties join the totals above.</div>
+          <div id="pfo-pipeline" class="pfo-pipeline"></div>
+        </div>
+        <div class="section">
+          <h2>Suburb side-by-side</h2>
+          <div class="hint">Tick two or three of your saved suburbs to compare them. Save suburbs on this page first.</div>
+          <div id="sb-picker" class="chip-row"></div>
+          <div class="table-wrap"><table id="sb-table"></table></div>
+        </div>
+      </section>
+
+      <!-- ==================== LOCATION IQ ==================== -->
+      <section id="section-location" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">LOCATION IQ</div><h1 class="page-title">Map search</h1><div class="page-description">Hazards, planning zones, boundaries and infrastructure from government open data — layers toggle on the map. Victorian and Queensland layers are live; more states as their feeds are verified.</div></div></div>
+        <div class="lq-wrap">
+          <div class="lq-side">
+            <div class="field"><label>Search address, suburb or postcode</label>
+              <input type="text" id="lq-search" autocomplete="off" placeholder="e.g. 50 Oldmill Drive, Beaconsfield">
+              <div id="lq-suggest" class="addr-dropdown"></div>
+            </div>
+            <div class="field"><label>Map style</label>
+              <select id="lq-basemap">
+                <option value="standard">Standard</option>
+                <option value="satellite">Satellite</option>
+                <option value="hybrid">Hybrid</option>
+              </select></div>
+            <div id="lq-layers"></div>
+            <div class="source-note">Layers: VIC open data (WMS), QLD Globe (ArcGIS), ABS 2021 Census (SA2).</div>
+          </div>
+          <div class="lq-map"><div id="lq-map"></div></div>
+        </div>
+      </section>
+
+      <!-- ==================== HEAT MAPS ==================== -->
+      <section id="section-heatmaps" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">HEAT MAPS</div><h1 class="page-title">Every community, at a glance</h1><div class="page-description">2021 Census by SA2, Australia-wide — tenure, stress, work, age and demand signals. Pick a metric, pan anywhere.</div></div></div>
+        <div class="section">
+          <div id="hm-groups"></div>
+          <div style="margin-top:10px"><label class="lq-layer" style="display:inline-flex;align-items:center;gap:6px"><input type="checkbox" id="hm-labels"> <span>Show values on the map</span></label></div>
+        </div>
+        <div class="section">
+          <div style="height:520px;border-radius:.8rem;overflow:hidden;border:1px solid var(--bd)"><div id="hm-map" style="height:100%"></div></div>
+          <div id="hm-legend" class="lq-legend" style="margin-top:8px"></div>
+          <div class="source-note">2021 Census (SA2 level) &copy; Australian Bureau of Statistics via ArcGIS — free and open. Values load for the visible map area; the colour ramp runs light → dark within what's on screen.</div>
+        </div>
+      </section>
+
+      <!-- ==================== MARKETS ==================== -->
+      <section id="section-markets" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">MARKETS</div><h1 class="page-title">Australia by state</h1><div class="page-description">Macro indicators from ABS releases. State rankings update per metric.</div></div></div>
+        <div class="section">
+          <div class="cards" id="mk-cards"></div>
+        </div>
+        <div class="section">
+          <h2>Median price history
+            <select id="mk-price-state" style="margin-left:8px"></select>
+            <select id="mk-price-kind" style="margin-left:8px">
+              <option value="houses">Houses</option>
+              <option value="units">Units</option>
+            </select></h2>
+          <div class="hint">Quarterly median price, capital city vs rest of state — ABS Total Value of Dwellings, Table 2.</div>
+          <div class="chart-box"><canvas id="chart-mk-prices"></canvas></div>
+          <div class="source-note" id="mk-price-src"></div>
+        </div>
+        <div class="section">
+          <h2>States</h2>
+          <div id="mk-tabs" class="chip-row"></div>
+          <div id="mk-states" class="mk-states"></div>
+          <div id="mk-capitals" class="mk-capitals"></div>
+        </div>
+      </section>
+
+      <!-- ==================== TOOLS ==================== -->
+      <section id="section-tools" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">PROPERTY TOOLS</div><h1 class="page-title">Quick calculators</h1><div class="page-description">Stand-alone versions of the modelling you use inside the analyser — no scenario needed.</div></div></div>
+        <div class="section">
+          <h2>Rental yield</h2>
+          <div class="grid-form">
+            <div class="field"><label>Price <span class="unit">$</span></label><input type="number" id="t-yield-price"></div>
+            <div class="field"><label>Weekly rent <span class="unit">$</span></label><input type="number" id="t-yield-rent"></div>
+          </div>
+          <div class="source-note" id="t-yield-out"></div>
+        </div>
+        <div class="section">
+          <h2>Mortgage repayments</h2>
+          <div class="grid-form">
+            <div class="field"><label>Loan amount <span class="unit">$</span></label><input type="number" id="t-rep-loan"></div>
+            <div class="field"><label>Interest rate <span class="unit">%</span></label><input type="number" id="t-rep-rate" step="0.01"></div>
+            <div class="field"><label>Term <span class="unit">years</span></label><input type="number" id="t-rep-term" value="30"></div>
+            <div class="field"><label>Repayment type</label><select id="t-rep-type"><option value="principal_and_interest">P&amp;I</option><option value="interest_only">Interest only</option></select></div>
+          </div>
+          <div class="source-note" id="t-rep-out"></div>
+        </div>
+        <div class="section">
+          <h2>Upfront cash to buy</h2>
+          <div class="grid-form">
+            <div class="field"><label>State</label><select id="t-cash-state"><option>QLD</option><option>NSW</option><option>VIC</option><option>SA</option><option>WA</option><option>TAS</option><option>NT</option><option>ACT</option></select></div>
+            <div class="field"><label>Price <span class="unit">$</span></label><input type="number" id="t-cash-price"></div>
+            <div class="field"><label>Deposit LVR <span class="unit">%</span></label><input type="number" id="t-cash-lvr" value="80"></div>
+          </div>
+          <div class="source-note" id="t-cash-out"></div>
+        </div>
+        <div class="section">
+          <h2>Usable equity</h2>
+          <div class="grid-form">
+            <div class="field"><label>Property value <span class="unit">$</span></label><input type="number" id="t-eq-value"></div>
+            <div class="field"><label>Loan balance <span class="unit">$</span></label><input type="number" id="t-eq-loan"></div>
+          </div>
+          <div class="source-note" id="t-eq-out"></div>
+        </div>
+        <div class="section">
+          <h2>Borrowing power</h2>
+          <div class="grid-form">
+            <div class="field"><label>Household income <span class="unit">$</span></label><input type="number" id="t-bor-income"></div>
+            <div class="field"><label>Interest rate <span class="unit">%</span></label><input type="number" id="t-bor-rate" step="0.01" value="6.5"></div>
+            <div class="field"><label>Other debts <span class="unit">$ / yr</span></label><input type="number" id="t-bor-debts" value="0"></div>
+          </div>
+          <div class="source-note" id="t-bor-out"></div>
         </div>
       </section>
     </main>
@@ -900,9 +1110,46 @@
         <input type="password" id="auth-password" autocomplete="current-password"></div>
       <div class="field check-field"><label for="auth-ba">Buyer's agent account (Workspace + client sharing)</label>
         <input type="checkbox" id="auth-ba"></div>
+      <div class="grid-form" id="auth-onboarding">
+        <div class="field"><label>What's your goal?</label>
+          <select id="auth-goal">
+            <option value="">— optional —</option>
+            <option>Buy my first home</option>
+            <option>Upgrade my PPOR</option>
+            <option>Buy an investment</option>
+            <option>Grow my portfolio</option>
+            <option>Learn for now</option>
+          </select></div>
+        <div class="field"><label>Properties owned today</label>
+          <select id="auth-owned">
+            <option value="">— optional —</option>
+            <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option><option value="5+">5+</option>
+          </select></div>
+      </div>
       <div class="login-actions">
         <button id="btn-login" class="primary">Sign in</button>
         <button id="btn-register">Create account</button>
+        <button id="link-forgot" class="btn-ghost">Forgot password?</button>
+      </div>
+      <div id="auth-forgot-box" class="hidden" style="margin-top:12px">
+        <div class="hint">Enter your account email — we'll send a reset link (valid 30 minutes).</div>
+        <div class="field"><label>Email</label>
+          <input type="email" id="auth-forgot-email" autocomplete="email"></div>
+        <div class="login-actions">
+          <button id="btn-forgot-send" class="primary">Send reset link</button>
+          <button id="btn-forgot-cancel" class="btn-ghost">Back to sign in</button>
+        </div>
+        <div id="forgot-msg" class="source-note"></div>
+      </div>
+      <div id="auth-reset-box" class="hidden" style="margin-top:12px">
+        <div class="hint">Choose a new password for your account.</div>
+        <div class="field"><label>New password <span class="unit">min 8 chars</span></label>
+          <input type="password" id="auth-new-password" autocomplete="new-password"></div>
+        <div class="login-actions">
+          <button id="btn-reset-confirm" class="primary">Set password</button>
+        </div>
+        <div id="reset-msg" class="source-note"></div>
       </div>
       <div id="auth-error" class="auth-error hidden"></div>
     </div>

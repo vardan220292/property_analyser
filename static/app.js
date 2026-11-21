@@ -26,6 +26,7 @@
     inputs: null,        // engine-normalized v3 shape: globals + properties[]
     scenarioId: null,    // null = unsaved draft
     result: null,        // calculateAll() output
+    ownedResult: null,   // calculateAll() over purchased-only properties; null when none purchased
     cfYear: 1,           // year selected in the Cash Flow section
     inputTab: 0,         // active Inputs tab: 'portfolio' | 'ppor' | IP index
     viewProp: -1,        // result views: -1 = portfolio, else property index
@@ -258,6 +259,31 @@
     });
   }
 
+  // Evidence capture (comps / rentals) keeps free-text rows, so the picker
+  // only fills the input — no geocode settle, no scenario state to touch.
+  function wireEvidenceAddress(inputSel, ddSel) {
+    const input = $(inputSel);
+    const dd = $(ddSel);
+    if (!input || !dd) return;
+    const picker = { input, dd, items: [], scope: 'property' };
+    dd.addEventListener('mousedown', (ev) => {
+      const row = ev.target.closest('[data-addr-pick]');
+      if (!row) return;
+      ev.preventDefault();
+      const item = picker.items[Number(row.dataset.addrPick)];
+      if (item) { input.value = item.address; hideSuggest(dd); }
+    });
+    input.addEventListener('input', () => {
+      clearTimeout(suggestTimer);
+      hideSuggest(dd);
+      const q = input.value.trim();
+      if (q.length < 3) return;
+      suggestTimer = setTimeout(() => fetchSuggest(picker, q), 300);
+    });
+    input.addEventListener('focusout', () => setTimeout(() => hideSuggest(dd), 120));
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') hideSuggest(dd); });
+  }
+
   // Hints that keep the geocoder in the right place.
   //
   // The map bias must never leak between addresses: biasing one lookup with
@@ -469,15 +495,20 @@
     },
   });
 
+  wireEvidenceAddress('#comp-address', '#comp-addr-dropdown');
+  wireEvidenceAddress('#rental-address', '#rental-addr-dropdown');
+
   // ------------------------------------------------------------------
   // Navigation
   // ------------------------------------------------------------------
 
   const TITLES = {
-    overview: 'Dashboard', inputs: 'Inputs', property: 'Property', area: 'Area',
+    overview: 'Dashboard', portfolio: 'Portfolio', inputs: 'Inputs', property: 'Property', area: 'Area',
+    dealcheck: 'Deal Check', heatmaps: 'Heat maps',
     cashflow: 'Cash Flow',
     projections: 'Projections', exit: 'Exit', borrowing: 'Borrowing',
     actuals: 'Actuals', scenarios: 'Scenarios', workspace: 'Workspace',
+    markets: 'Markets', tools: 'Tools', location: 'Location IQ',
   };
 
   // Responsive collapsible application navigation.
@@ -538,10 +569,995 @@
     if (a.dataset.target === 'actuals') renderActuals();
     if (a.dataset.target === 'property') renderProperty();
     if (a.dataset.target === 'overview') loadDashboard();
-    // Start each workflow at its page heading instead of retaining the
-    // previous section's scroll position.
+    if (a.dataset.target === 'portfolio') loadPortfolio();
+    if (a.dataset.target === 'markets') { loadMarkets(); loadMkPrices(); }
+    if (a.dataset.target === 'location') initLocationIQ();
+    if (a.dataset.target === 'heatmaps') initHeatMapsPage();
+    if (a.dataset.target === 'dealcheck') initDealCheckPage();
+    if (a.dataset.target === 'area') renderSuburbCompare();
     window.scrollTo(0, 0);
   });
+
+  // Programmatic section switch — same path a real nav click takes, so all
+  // per-section side effects (refreshWorkspace, loadDashboard…) still run.
+  function goSection(target) {
+    const a = document.querySelector('#nav a[data-target="' + target + '"]');
+    if (a) a.click();
+  }
+
+  // Post-login landing: BAs work out of the Client workspace; everyone else
+  // starts on the dashboard (clients never reach here — they redirect to
+  // /portal). goSection takes the real nav-click path, which also refreshes
+  // that section's data.
+  function landAfterLogin() {
+    goSection(state.currentUser && state.currentUser.role === 'ba' ? 'workspace' : 'overview');
+    startTour();
+  }
+
+  // ------------------------------------------------------------------
+  // My Portfolio — aggregate every purchased scenario
+  // ------------------------------------------------------------------
+
+  let pfoCache = null;
+  const PFO_STATUSES = [['considering', 'Considering'], ['under_offer', 'Under offer'], ['purchased', 'Purchased']];
+
+  async function loadPortfolio(force) {
+    if (!state.currentUser) return;
+    try {
+      if (force || !pfoCache) pfoCache = await api('/api/scenarios/portfolio');
+      renderPortfolio(pfoCache);
+    } catch (err) { toast('Portfolio: ' + err.message); }
+  }
+
+  function renderPortfolio(items) {
+    const owned = items.filter((i) => i.ownershipStatus === 'purchased');
+    const calcs = owned.map((item) => ({ item, r: E.calculateAll(item.inputs) }));
+    const totalValue = calcs.reduce((s, c) => s + (c.r.metrics.purchasePrice || 0), 0);
+    const totalDebt = calcs.reduce((s, c) => s + (c.r.metrics.ipLoanAmount || 0), 0);
+    const netWorth = totalValue - totalDebt;
+    const usableEquity = Math.max(0, totalValue * 0.8 - totalDebt);
+    const outright = calcs.filter((c) => (c.r.metrics.ipLoanAmount || 0) <= 1000).length;
+    const weekly = calcs.reduce((s, c) => s + ((c.r.rows[0] || {}).afterTaxCashFlow || 0), 0) / 52;
+
+    const cards = [
+      ['Total property value', totalValue ? fmtMoney(totalValue) : '—', owned.length + ' purchased propert' + (owned.length === 1 ? 'y' : 'ies'), 'blue'],
+      ['Total debt', calcs.length ? fmtMoney(totalDebt) : '—', 'Across all loans', 'violet'],
+      ['Net worth', calcs.length ? fmtMoney(netWorth) : '—', 'Value less debt', 'green'],
+      ['Usable equity', calcs.length ? fmtMoney(usableEquity) : '—', '80% of value less debt', 'amber'],
+      ['Owned outright', calcs.length ? Math.round(outright / calcs.length * 100) + '%' : '—', outright + ' of ' + calcs.length + ' debt-free', 'teal'],
+      ['Weekly position', calcs.length ? fmtMoney(Math.abs(weekly)) + (weekly > 0 ? ' out' : ' surplus') : '—', 'After tax, year 1 combined', weekly > 0 ? 'bad' : 'good'],
+    ];
+    $('#pfo-stats').innerHTML = cards.map((x) =>
+      '<div class="portfolio-kpi ' + x[3] + '"><div class="portfolio-kpi-label">' + escapeHtml(x[0]) + '</div>' +
+      '<div class="portfolio-kpi-value">' + escapeHtml(x[1]) + '</div>' +
+      '<div class="portfolio-kpi-note">' + escapeHtml(x[2]) + '</div></div>').join('');
+
+    // Net worth chart: year 0 = today, then summed projections.
+    const years = Math.max(1, ...calcs.map((c) => (c.r.rows || []).length), 15);
+    const labels = ['Now', ...Array.from({ length: Math.min(15, years) }, (_, i) => 'Y' + (i + 1))];
+    const at = (c, y) => y === 0
+      ? { v: c.r.metrics.purchasePrice || 0, d: c.r.metrics.ipLoanAmount || 0 }
+      : (c.r.rows[y - 1] || {});
+    const valueData = labels.map((_, y) => calcs.reduce((s, c) => s + (at(c, y).v || 0), 0));
+    const debtData = labels.map((_, y) => calcs.reduce((s, c) => s + (at(c, y).d || 0), 0));
+    drawChart('pfo-chart', {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Property value', data: valueData, borderColor: COLORS.pri, backgroundColor: COLORS.pri, tension: 0.15, pointRadius: 0 },
+          { label: 'Total debt', data: debtData, borderColor: COLORS.red, backgroundColor: COLORS.red, tension: 0.15, pointRadius: 0 },
+          { label: 'Net worth', data: valueData.map((v, i) => v - debtData[i]), borderColor: COLORS.green, backgroundColor: COLORS.green, tension: 0.15, pointRadius: 0 },
+        ],
+      },
+      options: baseOpts((v) => (v < 0 ? '−' : '') + fmtMoney(Math.abs(v), 0)),
+    });
+
+    // Own & owe table
+    $('#pfo-table').innerHTML = `
+      <thead><tr><th>Property</th><th>Price</th><th>Loan</th><th>Equity</th>
+      <th>Yr-1 cash flow</th><th>Gross yield</th></tr></thead><tbody>
+      ${calcs.map((c) => {
+        const p = (c.item.inputs.properties || [{}])[0];
+        const m = c.r.metrics;
+        return `<tr>
+          <td>${escapeHtml(c.item.name)}</td>
+          <td>${fmtMoney(p.purchasePrice || 0)}</td>
+          <td>${fmtMoney(m.ipLoanAmount || 0)}</td>
+          <td>${fmtMoney((p.purchasePrice || 0) - (m.ipLoanAmount || 0))}</td>
+          <td class="${(m.weeklyOutOfPocket || 0) > 0 ? 'neg' : 'pos'}">${fmtMoney(-m.weeklyOutOfPocket)}/yr</td>
+          <td>${fmtPct(m.grossYield || 0)}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="6">Mark properties as Purchased (in Inputs) to build your portfolio totals.</td></tr>'}
+      </tbody>`;
+
+    // Pipeline board
+    const by = { considering: [], under_offer: [], purchased: [] };
+    items.forEach((i) => { (by[i.ownershipStatus] || by.considering).push(i); });
+    $('#pfo-pipeline').innerHTML = PFO_STATUSES.map(([key, label]) => `
+      <div class="pfo-col">
+        <div class="pfo-col-head">${escapeHtml(label)} <span>${by[key].length}</span></div>
+        ${by[key].map((i) => `
+          <div class="pfo-card">
+            <div class="pfo-card-name">${escapeHtml(i.name)}</div>
+            <div class="pfo-card-sub">${escapeHtml(i.address || '')}</div>
+            <div class="pfo-card-actions">
+              ${key !== 'considering' ? `<button data-pfo-move="${i.id}" data-pfo-to="considering">← Considering</button>` : ''}
+              ${key !== 'under_offer' ? `<button data-pfo-move="${i.id}" data-pfo-to="under_offer">Under offer</button>` : ''}
+              ${key !== 'purchased' ? `<button data-pfo-move="${i.id}" data-pfo-to="purchased" class="pos">Purchased →</button>` : ''}
+            </div>
+          </div>`).join('') || '<div class="source-note">Nothing here yet.</div>'}
+      </div>`).join('');
+  }
+
+  $('#pfo-pipeline').addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button[data-pfo-move]');
+    if (!btn) return;
+    try {
+      await api(`/api/scenarios/${btn.dataset.pfoMove}/status`, {
+        method: 'PATCH', body: { status: btn.dataset.pfoTo },
+      });
+      await loadPortfolio(true);
+      toast('Moved to ' + btn.dataset.pfoTo.replace('_', ' '));
+    } catch (err) { toast('Error: ' + err.message); }
+  });
+
+  // ------------------------------------------------------------------
+  // Markets — ABS macro stats
+  // ------------------------------------------------------------------
+
+  let mkCache = null;
+  let mkMetric = 'populationGrowth';
+  const MK_LABELS = { populationGrowth: 'Population Growth', unemployment: 'Unemployment',
+    householdIncome: 'Household Income', businessGrowth: 'Business Growth a Year',
+    renters: 'Renters', medianAge: 'Median Age', overseasMigration: 'Overseas Migration per 1,000' };
+
+  async function loadMarkets() {
+    try {
+      if (!mkCache) mkCache = await api('/api/markets');
+      renderMarkets(mkCache);
+    } catch (err) { toast('Markets: ' + err.message); }
+  }
+
+  function renderMarkets(d) {
+    const unit = (k) => (d.national[k] || {}).unit || '';
+    $('#mk-cards').innerHTML = Object.keys(MK_LABELS)
+      .filter((k) => d.national[k])
+      .map((k) => {
+        const n = d.national[k];
+        const val = n.unit === '$/wk' ? fmtMoney(n.value) + '/wk' : n.value + n.unit;
+        return '<div class="card"><div class="label">' + escapeHtml(MK_LABELS[k]) + '</div>' +
+          '<div class="value">' + escapeHtml(val) + '</div>' +
+          '<div class="card-sub">' + escapeHtml(n.label) + '</div></div>';
+      }).join('') ||
+      '<div class="empty-note">National market data is not loaded.</div>';
+
+    const stateMetricKeys = Object.keys(d.states.WA || {}).filter((k) => typeof d.states.WA[k] === 'number');
+    $('#mk-tabs').innerHTML = stateMetricKeys.map((k) =>
+      `<button class="chip ${mkMetric === k ? 'active' : ''}" data-mk-metric="${k}">${escapeHtml(MK_LABELS[k] || k)}</button>`).join('');
+
+    const ranked = Object.entries(d.states)
+      .map(([code, s]) => ({ code, name: s.name, value: s[mkMetric],
+                             cap: s.capitalVsRest && s.capitalVsRest.capital,
+                             rest: s.capitalVsRest && s.capitalVsRest.rest }))
+      .filter((s) => s.value != null)
+      .sort((a, b) => b.value - a.value);
+    const peak = ranked.length ? ranked[0].value : 1;
+    $('#mk-states').innerHTML = '<h3 class="mk-h">' + escapeHtml(MK_LABELS[mkMetric] || mkMetric) + ', by state</h3>' +
+      ranked.map((s) => `
+        <div class="mk-row">
+          <span class="mk-code">${escapeHtml(s.code)}</span>
+          <div class="mk-bar"><div style="width:${(s.value / peak * 100).toFixed(0)}%"></div></div>
+          <strong>${s.value.toFixed(2)}%</strong>
+        </div>`).join('');
+
+    const capRows = ranked.filter((s) => s.cap != null);
+    $('#mk-capitals').innerHTML = capRows.length
+      ? '<h3 class="mk-h">Capital city against the rest of the state</h3>' +
+        capRows.map((s) => `
+          <div class="mk-row"><span class="mk-code">${escapeHtml(s.code)}</span>
+          <span class="mk-cap">${escapeHtml(d.capitals[s.code] || '')}</span>
+          <strong>${s.cap.toFixed(2)}%</strong> <span class="mk-rest">vs rest ${s.rest.toFixed(2)}%</span></div>`).join('')
+      : '';
+  }
+
+  $('#mk-tabs').addEventListener('click', (ev) => {
+    const chip = ev.target.closest('button[data-mk-metric]');
+    if (!chip) return;
+    mkMetric = chip.dataset.mkMetric;
+    if (mkCache) renderMarkets(mkCache);
+  });
+
+  // Median price history (ABS Total Value of Dwellings, Table 2)
+  let mkPriceCache = null;
+
+  async function loadMkPrices() {
+    try {
+      if (!mkPriceCache) mkPriceCache = await api('/api/markets/prices');
+    } catch (err) {
+      $('#mk-price-src').textContent = 'Price history unavailable: ' + err.message;
+      return;
+    }
+    const d = mkPriceCache;
+    const stateSel = $('#mk-price-state');
+    const codes = Object.keys(d.states);
+    if (stateSel && !stateSel.options.length) {
+      stateSel.innerHTML = codes.map((c) =>
+        `<option value="${c}">${escapeHtml((d.capitals[c] || c) + ' — ' + c)}</option>`).join('');
+      const cur = (state.inputs && state.inputs.state) || '';
+      if (cur && d.states[cur]) stateSel.value = cur;
+    }
+    renderMkPrices();
+  }
+
+  function renderMkPrices() {
+    const d = mkPriceCache;
+    if (!d || !$('#mk-price-state').value) return;
+    const st = $('#mk-price-state').value;
+    const kind = $('#mk-price-kind').value;
+    const areas = d.states[st];
+    if (!areas) return;
+    const capital = d.capitals[st] || st;
+    const labels = d.periods.map((p) => p.slice(0, 7));
+    const toK = (vals) => vals.map((v) => (v == null ? null : Math.round(v / 1000)));
+    const datasets = [];
+    let yoy = null;
+    if (areas.capital && areas.capital[kind]) {
+      const vals = areas.capital[kind];
+      const last = vals[vals.length - 1], yr = vals[vals.length - 5];
+      if (last != null && yr) yoy = (last - yr) / yr * 100;
+      datasets.push({ label: `${capital} (capital)`, data: toK(vals),
+                      borderColor: '#2563eb', tension: 0.2, pointRadius: 0 });
+    }
+    if (areas.rest && areas.rest[kind]) {
+      datasets.push({ label: `Rest of ${st}`, data: toK(areas.rest[kind]),
+                      borderColor: '#94a3b8', borderDash: [5, 4], tension: 0.2, pointRadius: 0 });
+    }
+    drawChart('chart-mk-prices', {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        maintainAspectRatio: false,
+        scales: { y: { ticks: { callback: (v) => '$' + v + 'k' } } },
+        plugins: { legend: { labels: { boxWidth: 12 } } },
+      },
+    });
+    $('#mk-price-src').textContent = d.source
+      + (yoy != null ? ` · ${capital} ${yoy >= 0 ? '+' : ''}${yoy.toFixed(1)}% over the last year` : '');
+  }
+
+  $('#mk-price-state').addEventListener('change', renderMkPrices);
+  $('#mk-price-kind').addEventListener('change', renderMkPrices);
+
+  // ------------------------------------------------------------------
+  // Tools — stand-alone calculators
+  // ------------------------------------------------------------------
+
+  function bindTools() {
+    const num = (id) => Number($(id).value || 0);
+    const bind = (ids, fn) => ids.forEach((id) => $(id).addEventListener('input', fn));
+
+    bind(['#t-yield-price', '#t-yield-rent'], () => {
+      const price = num('#t-yield-price'), rent = num('#t-yield-rent');
+      $('#t-yield-out').textContent = price && rent
+        ? `Gross yield ${fmtPct(rent * 52 / price)} — ${fmtMoney(rent * 52)}/yr, ${fmtMoney(rent * 52 / price * 1000)} per $1,000 of price`
+        : '';
+    });
+    bind(['#t-rep-loan', '#t-rep-rate', '#t-rep-term', '#t-rep-type'], () => {
+      const loan = num('#t-rep-loan'), rate = num('#t-rep-rate') / 100, term = num('#t-rep-term') || 30;
+      if (!loan) { $('#t-rep-out').textContent = ''; return; }
+      if ($('#t-rep-type').value === 'interest_only') {
+        $('#t-rep-out').textContent = `Interest-only: ${fmtMoney(loan * rate / 12)}/month (${fmtMoney(loan * rate)}/yr)`;
+      } else {
+        const monthly = E.loanPayment(loan, rate, term);
+        $('#t-rep-out').textContent = `P&I: ${fmtMoney(monthly)}/month · total interest over ${term} years ${fmtMoney(monthly * term * 12 - loan)}`;
+      }
+    });
+    bind(['#t-cash-state', '#t-cash-price', '#t-cash-lvr'], () => {
+      const price = num('#t-cash-price');
+      if (!price) { $('#t-cash-out').textContent = ''; return; }
+      const f = E.fundingStructure({ state: $('#t-cash-state').value,
+        purchasePrice: price, ipLvr: num('#t-cash-lvr') / 100 });
+      $('#t-cash-out').textContent = `Duty ${fmtMoney(f.transferDuty)} · acquisition ${fmtMoney(f.acquisitionCosts)} · loan ${fmtMoney(f.ipLoanStart)} → cash needed ${fmtMoney(f.initialCashInvested)}`;
+    });
+    bind(['#t-eq-value', '#t-eq-loan'], () => {
+      const value = num('#t-eq-value'), loan = num('#t-eq-loan');
+      $('#t-eq-out').textContent = value
+        ? `Usable equity (80% of ${fmtMoney(value)} less ${fmtMoney(loan)}): ${fmtMoney(Math.max(0, value * 0.8 - loan))}`
+        : '';
+    });
+    bind(['#t-bor-income', '#t-bor-rate', '#t-bor-debts'], () => {
+      const income = num('#t-bor-income');
+      if (!income) { $('#t-bor-out').textContent = ''; return; }
+      const b = E.borrowingCapacity({ owner1TaxableIncome: income,
+        ipInterestRate: num('#t-bor-rate') / 100, otherDebtAnnualPayments: num('#t-bor-debts') });
+      $('#t-bor-out').textContent = `Estimated borrowing power: ${fmtMoney(b.maxNewLoan)} (buffered rate, indicative only)`;
+    });
+  }
+  bindTools();
+
+  // ------------------------------------------------------------------
+  // Suburb side-by-side comparison
+  // ------------------------------------------------------------------
+
+  const sbSelected = new Set();
+
+  function renderSuburbCompare() {
+    const picker = $('#sb-picker');
+    const table = $('#sb-table');
+    if (!picker || !table) return;
+    const suburbs = (state.suburbs || []).slice(0, 8);
+    picker.innerHTML = suburbs.length ? suburbs.map((s) => `
+      <label class="chip ${sbSelected.has(s.id) ? 'active' : ''}" style="cursor:pointer">
+        <input type="checkbox" data-sb="${s.id}" ${sbSelected.has(s.id) ? 'checked' : ''}
+               style="margin-right:.3rem">${escapeHtml(s.name)} ${escapeHtml(s.postcode || '')}
+      </label>`).join('')
+      : '<span class="source-note">No saved suburbs yet — save one above to compare.</span>';
+    const picked = suburbs.filter((s) => sbSelected.has(s.id));
+    if (picked.length < 2) {
+      table.innerHTML = '<tr><td>Tick at least two suburbs to compare.</td></tr>';
+      return;
+    }
+    const metrics = [
+      ['Median sale price', (s) => s.medianPrice != null ? fmtMoney(s.medianPrice) : '—'],
+      ['Median rent (3 bed)', (s) => s.medianRent3Bed != null ? fmtMoney(s.medianRent3Bed) + '/wk' : '—'],
+      ['Vacancy rate', (s) => s.vacancyPct != null ? s.vacancyPct.toFixed(1) + '%' : '—'],
+      ['5-year growth', (s) => s.growth5yrPct != null ? s.growth5yrPct.toFixed(1) + '%' : '—'],
+      ['Days on market', (s) => s.medianDaysOnMarket != null ? s.medianDaysOnMarket : '—'],
+      ['Approvals ratio', (s) => s.approvalsRatio != null ? Number(s.approvalsRatio).toFixed(2) : '—'],
+    ];
+    table.innerHTML = `
+      <thead><tr><th></th>${picked.map((s) => `<th>${escapeHtml(s.name)} ${escapeHtml(s.postcode || '')}</th>`).join('')}</tr></thead>
+      <tbody>${metrics.map(([label, fn]) => `
+        <tr><td>${escapeHtml(label)}</td>${picked.map((s) => `<td>${fn(s)}</td>`).join('')}</tr>`).join('')}
+      </tbody>`;
+  }
+
+  $('#sb-picker').addEventListener('change', (ev) => {
+    const cb = ev.target.closest('input[data-sb]');
+    if (!cb) return;
+    const id = Number(cb.dataset.sb);
+    if (cb.checked) {
+      if (sbSelected.size >= 3) { cb.checked = false; toast('Compare up to 3 suburbs'); return; }
+      sbSelected.add(id);
+    } else sbSelected.delete(id);
+    renderSuburbCompare();
+  });
+
+  // ------------------------------------------------------------------
+  // Data export — one JSON with all scenarios, actuals, comps, suburbs
+  // ------------------------------------------------------------------
+
+  $('#btn-export-data').addEventListener('click', async () => {
+    try {
+      const d = await api('/api/scenarios/export');
+      const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'property-analyser-export.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('Data exported');
+    } catch (err) { toast('Error: ' + err.message); }
+  });
+
+  // ------------------------------------------------------------------
+  // Location IQ — national map with government data layers
+  // ------------------------------------------------------------------
+
+  const VIC_WMS = 'https://opendata.maps.vic.gov.au/geoserver/wms';
+  // Census heat maps — one free ABS FeatureServer (2021 Census, SA2 level)
+  // powers every metric below. The licence is open; attribution shows on-page.
+  const HEAT_SOURCE = {
+    url: 'https://services1.arcgis.com/v8Kimc579yljmjSP/arcgis/rest/services/SA2_ABS_SEIFACS_2024_Apr/FeatureServer/0/query',
+    ramp: ['#fff5d6', '#fdd49e', '#fc8d59', '#d7301f', '#7f0000'],
+  };
+  const HEAT_METRICS = [
+    { key: 'tenure_4', label: 'Home rented %', group: 'Housing & tenure', unit: '%' },
+    { key: 'tenure_owned', label: 'Owned outright %', group: 'Housing & tenure', unit: '%' },
+    { key: 'tenure_3', label: 'Owned with mortgage %', group: 'Housing & tenure', unit: '%' },
+    { key: 'publich_1_pc', label: 'Public housing %', group: 'Housing & tenure', unit: '%' },
+    { key: 'afford_3', label: 'Mortgage stress %', group: 'Housing & tenure', unit: '%',
+      note: 'Households paying >30% of income on the mortgage' },
+    { key: 'afford_5', label: 'Rent stress %', group: 'Housing & tenure', unit: '%',
+      note: 'Households paying >30% of income on rent' },
+    { key: 'house_2_pc', label: 'Overcrowded homes %', group: 'Housing & tenure', unit: '%',
+      note: 'Households needing extra bedrooms' },
+    { key: 'house_3_pc', label: 'Spare bedrooms %', group: 'Housing & tenure', unit: '%' },
+    { key: 'hied_1_pc', label: 'Low-income households %', group: 'People & income', unit: '%' },
+    { key: 'lf_4', label: 'Unemployment rate', group: 'People & income', unit: '%' },
+    { key: 'lf_5', label: 'Participation rate', group: 'People & income', unit: '%',
+      note: 'Working-age people in or seeking work' },
+    { key: 'arrmig_2', label: 'Recent migrants (5yr) %', group: 'People & income', unit: '%' },
+    { key: 'unpaidw_3', label: 'Volunteers %', group: 'People & income', unit: '%' },
+    { key: 'vehd_1_pc', label: 'Households without a car %', group: 'People & income', unit: '%' },
+    { key: 'hhtype_6', label: 'Avg household size', group: 'People & income', unit: '', dp: 1 },
+    { key: 'ing_erp_p_pc', label: 'First Nations residents %', group: 'People & income', unit: '%' },
+    { key: 'erp_p_75p_pc', label: 'Population 75+ %', group: 'Life stage', unit: '%' },
+    { key: 'erp_sch_1_pc', label: 'School-age (5-19) %', group: 'Life stage', unit: '%' },
+    { key: 'leed_4', label: 'Jobs per dwelling', group: 'Economy & disadvantage', unit: '', dp: 2,
+      fields: ['leed_4', 'dwell_7'],
+      compute: (p) => (Number.isFinite(p.leed_4) && p.dwell_7 > 0)
+        ? Math.round(p.leed_4 / p.dwell_7 * 100) / 100 : null },
+    { key: 'irsd_score', label: 'Disadvantage score (SEIFA)', group: 'Economy & disadvantage',
+      unit: '', invert: true, note: 'Low score = most disadvantaged (coloured red)' },
+    { key: 'erp_p_20', label: 'Population', group: 'Economy & disadvantage', unit: '' },
+  ];
+  const LQ_HEAT = HEAT_SOURCE;
+  const LQ_LAYERS = [
+    { group: 'Hazards', key: 'qld-bushfire', label: 'Bushfire prone (QLD)',
+      make: () => L.tileLayer(BUSHFIRE_TILES, { maxZoom: 19, opacity: 0.45 }) },
+    { group: 'Hazards', key: 'qld-flood', label: 'Flood studies (QLD)',
+      make: () => arcgisDynamic('https://spatial-gis.information.qld.gov.au/arcgis/rest/services/FloodCheck/BasicStudies/MapServer') },
+    { group: 'Hazards', key: 'vic-bushfire', label: 'Bushfire prone (VIC)',
+      make: () => wmsLayer(VIC_WMS, 'open-data-platform:bushfire_prone_area') },
+    { group: 'Hazards', key: 'vic-heritage', label: 'Heritage places (VIC)',
+      make: () => wmsLayer(VIC_WMS, 'open-data-platform:heritage_register') },
+    { group: 'Planning', key: 'vic-zoning', label: 'Planning zones (VIC)',
+      make: () => wmsLayer(VIC_WMS, 'open-data-platform:plan_zone') },
+    { group: 'Planning', key: 'vic-ugb', label: 'Urban growth boundary (VIC)',
+      make: () => wmsLayer(VIC_WMS, 'open-data-platform:ugb_2') },
+    { group: 'Planning', key: 'vic-easements', label: 'Easements (VIC)',
+      make: () => wmsLayer(VIC_WMS, 'open-data-platform:v_s_easement_approved') },
+    { group: 'Boundaries', key: 'vic-lga', label: 'Local government areas (VIC)',
+      make: () => wmsLayer(VIC_WMS, 'open-data-platform:lga_polygon', { opacity: 0.35 }) },
+    { group: 'Boundaries', key: 'vic-locality', label: 'Suburbs & localities (VIC)',
+      make: () => wmsLayer(VIC_WMS, 'open-data-platform:locality_polygon', { opacity: 0.35 }) },
+    { group: 'Boundaries', key: 'qld-bounds', label: 'Administrative boundaries (QLD)',
+      make: () => arcgisDynamic('https://spatial-gis.information.qld.gov.au/arcgis/rest/services/Boundaries/AdministrativeBoundaries/MapServer', { opacity: 0.35 }) },
+    { group: 'Infrastructure', key: 'vic-power', label: 'Electricity distributors (VIC)',
+      make: () => wmsLayer(VIC_WMS, 'open-data-platform:electricity_distributor') },
+  ];
+
+  const lq = { map: null, basemap: null, hybridLabels: null, layers: {}, myData: null };
+
+  function wmsLayer(url, layer, opts) {
+    return L.tileLayer.wms(url, Object.assign({
+      layers: layer, format: 'image/png', transparent: true, opacity: 0.6,
+    }, opts || {}));
+  }
+
+  // ArcGIS MapServer → Leaflet: each tile becomes an export-image request
+  // with the tile's bbox (Web Mercator → EPSG:4326).
+  function arcgisDynamic(serviceUrl, opts) {
+    const Arc = L.TileLayer.extend({
+      getTileUrl(coords) {
+        const n = Math.pow(2, coords.z);
+        const lonMin = (coords.x / n) * 360 - 180;
+        const lonMax = ((coords.x + 1) / n) * 360 - 180;
+        const latOf = (y) => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI;
+        return serviceUrl + '/export?' +
+          `bbox=${lonMin},${latOf(coords.y + 1)},${lonMax},${latOf(coords.y)}` +
+          '&bboxSR=4326&size=256,256&format=png32&transparent=true&f=image';
+      },
+    });
+    return new Arc(serviceUrl + '/export', Object.assign({
+      tileSize: 256, opacity: 0.6, maxZoom: 19,
+    }, opts || {}));
+  }
+
+  const LQ_BASEMAPS = {
+    standard: () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }),
+    satellite: () => L.tileLayer(INTEL_BASEMAPS.sat.url,
+      { maxZoom: 19, attribution: INTEL_BASEMAPS.sat.attribution }),
+    hybrid: () => L.tileLayer(INTEL_BASEMAPS.sat.url,
+      { maxZoom: 19, attribution: INTEL_BASEMAPS.sat.attribution }),
+  };
+  const LQ_HYBRID_LABELS = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+
+  function initLocationIQ() {
+    if (!L) { toast('Map library not loaded'); return; }
+    if (!lq.map) {
+      lq.map = L.map('lq-map', { zoomControl: true }).setView([-25.5, 134.5], 4);
+      setLqBasemap('hybrid');
+      // Layer panel
+      const groups = {};
+      LQ_LAYERS.forEach((l) => { (groups[l.group] = groups[l.group] || []).push(l); });
+      $('#lq-layers').innerHTML = Object.entries(groups).map(([group, layers]) => `
+        <div class="lq-group">
+          <div class="lq-group-head">${escapeHtml(group)}</div>
+          ${layers.map((l) => `
+            <label class="lq-layer"><input type="checkbox" data-lq-layer="${l.key}">
+            <span>${escapeHtml(l.label)}</span></label>`).join('')}
+        </div>`).join('')
+        + `<div class="lq-group"><div class="lq-group-head">My data</div>
+           <label class="lq-layer"><input type="checkbox" data-lq-mine>
+           <span>My properties (scenarios)</span></label></div>`
+        + `<div class="lq-group"><div class="lq-group-head">Heat maps</div>
+           <div class="note">2021 Census, ABS (SA2). Shows the current map area.</div>
+           <select id="lq-heat-metric">${heatGroupOptions().map((g) =>
+             `<optgroup label="${escapeHtml(g.group)}">${g.items.map((m) =>
+               `<option value="${m.key}">${escapeHtml(m.label)}</option>`).join('')}</optgroup>`).join('')}</select>
+           <label class="lq-layer"><input type="checkbox" data-lq-heat>
+           <span>Show census heat map</span></label>
+           <div id="lq-heat-legend" class="lq-legend"></div></div>`;
+      $('#lq-layers').addEventListener('change', (ev) => {
+        const cb = ev.target;
+        if (cb.dataset.lqLayer) toggleLqLayer(cb.dataset.lqLayer, cb.checked);
+        if (cb.dataset.lqMine !== undefined && 'lqMine' in cb.dataset) toggleLqMine(cb.checked);
+        if (cb.dataset.lqHeat !== undefined) toggleLqHeat(cb.checked);
+        if (cb.id === 'lq-heat-metric' && lq.heat) toggleLqHeat(true); // live metric switch
+      });
+      // Basemap switcher
+      $('#lq-basemap').addEventListener('change', (ev) => setLqBasemap(ev.target.value));
+      // Address search — reuses the Domain suggest endpoint
+      let seq = 0;
+      $('#lq-search').addEventListener('input', (ev) => {
+        const q = ev.target.value.trim();
+        const box = $('#lq-suggest');
+        if (q.length < 3) { box.classList.add('hidden'); return; }
+        const s = ++seq;
+        api('/api/address/suggest?q=' + encodeURIComponent(q)).then((list) => {
+          if (s !== seq) return;
+          box.innerHTML = (list || []).map((a) => `
+            <div class="addr-item" data-lq-lat="${a.lat || ''}" data-lq-lon="${a.lon || ''}"
+                 data-lq-label="${escapeHtml(a.address || '')}">${escapeHtml(a.address || '')}
+            <div class="sub">${escapeHtml(a.suburb || '')} ${escapeHtml(a.postcode || '')}</div></div>`).join('');
+          box.classList.toggle('hidden', !(list || []).length);
+        }).catch(() => { box.classList.add('hidden'); });
+      });
+      $('#lq-suggest').addEventListener('click', (ev) => {
+        const el = ev.target.closest('[data-lq-lat]');
+        if (!el) return;
+        const lat = Number(el.dataset.lqLat), lon = Number(el.dataset.lqLon);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) lq.map.setView([lat, lon], 17);
+        $('#lq-search').value = el.dataset.lqLabel || '';
+        $('#lq-suggest').classList.add('hidden');
+      });
+      setTimeout(() => lq.map.invalidateSize(), 80);
+      // Minimal automation/testing seam — the map itself stays closed over.
+      window.PropertyAnalyserLocationIQ = { map: lq.map };
+    } else {
+      setTimeout(() => lq.map.invalidateSize(), 80);
+    }
+  }
+
+  function setLqBasemap(kind) {
+    if (!lq.map) return;
+    if (lq.basemap) lq.map.removeLayer(lq.basemap);
+    if (lq.hybridLabels) { lq.map.removeLayer(lq.hybridLabels); lq.hybridLabels = null; }
+    lq.basemap = (LQ_BASEMAPS[kind] || LQ_BASEMAPS.standard)();
+    lq.basemap.addTo(lq.map);
+    lq.basemap.setZIndex(1);
+    if (kind === 'hybrid') {
+      lq.hybridLabels = L.tileLayer(LQ_HYBRID_LABELS, { maxZoom: 19, opacity: 0.9 });
+      lq.hybridLabels.addTo(lq.map);
+      lq.hybridLabels.setZIndex(2);
+    }
+  }
+
+  function toggleLqLayer(key, on) {
+    const def = LQ_LAYERS.find((l) => l.key === key);
+    if (!def || !lq.map) return;
+    if (on && !lq.layers[key]) lq.layers[key] = def.make().addTo(lq.map);
+    if (!on && lq.layers[key]) { lq.map.removeLayer(lq.layers[key]); delete lq.layers[key]; }
+  }
+
+  async function toggleLqMine(on) {
+    if (!lq.map) return;
+    if (!on) {
+      if (lq.myData) { lq.map.removeLayer(lq.myData); lq.myData = null; }
+      return;
+    }
+    try {
+      const items = await api('/api/scenarios/portfolio');
+      const colors = { purchased: '#059669', under_offer: '#f59e0b', considering: '#64748b' };
+      lq.myData = L.layerGroup();
+      items.forEach((i) => {
+        const meta = ((i.inputs.properties || [])[0] || {}).addressMeta || {};
+        const lat = Number(meta.lat), lon = Number(meta.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+        const color = colors[i.ownershipStatus] || '#64748b';
+        L.circleMarker([lat, lon], { radius: 8, color, weight: 3, fillOpacity: 0.4 })
+          .bindPopup(`<strong>${escapeHtml(i.name)}</strong><br>${escapeHtml(i.address || '')}<br>` +
+            `${escapeHtml(i.ownershipStatus.replace('_', ' '))} · ${fmtMoney(((i.inputs.properties || [{}])[0] || {}).purchasePrice || 0)}`)
+          .addTo(lq.myData);
+      });
+      lq.myData.addTo(lq.map);
+      if (!items.some((i) => {
+        const meta = ((i.inputs.properties || [{}])[0] || {}).addressMeta || {};
+        return Number.isFinite(Number(meta.lat));
+      })) toast('None of your scenarios have located addresses yet');
+    } catch (err) { toast('Could not load your properties: ' + err.message); }
+  }
+
+  // Census heat map: 2021 Census socio-economic data by SA2, queried for
+  // the current viewport straight from ABS's ArcGIS FeatureServer.
+  function heatMetricDef(key) {
+    return HEAT_METRICS.find((m) => m.key === key) || null;
+  }
+
+  function heatValue(def, props) {
+    if (def.compute) return def.compute(props);
+    const v = props[def.key];
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function heatFmt(def, v) {
+    const dp = def.dp != null ? def.dp : 0;
+    return dp ? Number(v).toFixed(dp) : Math.round(v).toLocaleString();
+  }
+
+  function heatColor(def, v, min, max) {
+    const raw = max > min ? (v - min) / (max - min) : 0;
+    const t = def.invert ? 1 - raw : raw;
+    return HEAT_SOURCE.ramp[Math.min(HEAT_SOURCE.ramp.length - 1,
+      Math.floor(t * HEAT_SOURCE.ramp.length))];
+  }
+
+  function heatLegendInto(sel, def, min, max) {
+    const el = $(sel);
+    if (!el || !def) return;
+    el.innerHTML = `<div class="lq-legend-title">${escapeHtml(def.label)}</div>
+      <div class="lq-legend-bar">${HEAT_SOURCE.ramp.map((c) =>
+        `<span style="background:${c}"></span>`).join('')}</div>
+      <div class="lq-legend-cap"><span>${heatFmt(def, min)}${def.unit}</span>
+      <span>${heatFmt(def, max)}${def.unit}</span></div>`;
+  }
+
+  function heatLoadingInto(sel, def, box, on) {
+    // Skip the flash when this viewport is already cached (instant repaint).
+    const cached = box && heatCache.get(heatBoxKey(box));
+    if (!on || (cached && cached.data)) return;
+    const el = $(sel);
+    if (el) el.innerHTML =
+      `<div class="lq-legend-title">${escapeHtml(def.label)}</div>
+       <div class="heat-loading"><span class="heat-spin"></span>Loading ABS census data…</div>`;
+  }
+
+  // Census responses cached per viewport for the session — geometry dominates
+  // the payload and every metric paints the same SA2 shapes, so ONE fetch per
+  // viewport carries all 21 metrics and switching metrics is an instant
+  // repaint. Concurrent paints (both maps) share the in-flight request.
+  const heatCache = new Map(); // box key -> { promise, data }
+  const HEAT_ALL_FIELDS = ['sa2_name_2021'].concat(
+    [...new Set(HEAT_METRICS.flatMap((m) => m.fields || [m.key]))]).join(',');
+  const heatBoxKey = (box) => box.map((v) => v.toFixed(3)).join(',');
+
+  async function fetchHeatGeojson(box) {
+    const key = heatBoxKey(box);
+    let entry = heatCache.get(key);
+    if (!entry) {
+      entry = { promise: null, data: null };
+      entry.promise = fetchHeatPages(box).then((d) => { entry.data = d; return d; });
+      if (heatCache.size > 40) heatCache.clear(); // bound memory on long sessions
+      heatCache.set(key, entry);
+    }
+    return entry.promise;
+  }
+
+  // The FeatureServer caps each response at maxRecordCount 1000 and flags
+  // `exceededTransferLimit` — page through or whole-of-state views are
+  // silently truncated. Simplification scales with viewport width so a
+  // national view doesn't download house-block-level outlines.
+  async function fetchHeatPages(box) {
+    const width = box[2] - box[0];
+    const tolerance = Math.min(0.04, Math.max(0.0008, width / 500));
+    const geom = encodeURIComponent(JSON.stringify({
+      xmin: box[0], ymin: box[1], xmax: box[2], ymax: box[3],
+    }));
+    let feats = [], exceeded = true, page = 0;
+    while (exceeded && page < 4) {
+      const url = `${HEAT_SOURCE.url}?where=1%3D1` +
+        `&outFields=${encodeURIComponent(HEAT_ALL_FIELDS)}` +
+        `&geometry=${geom}&geometryType=esriGeometryEnvelope&inSR=4326&outSR=4326` +
+        `&maxAllowableOffset=${tolerance}&resultRecordCount=1000` +
+        `&resultOffset=${page * 1000}&f=geojson`;
+      const resp = await fetch(url);
+      const d = await resp.json();
+      if (d.error) throw new Error(d.error.message || 'ABS service error');
+      feats = feats.concat(d.features || []);
+      exceeded = !!(d.properties && d.properties.exceededTransferLimit);
+      page += 1;
+    }
+    return { type: 'FeatureCollection', features: feats };
+  }
+
+  // ctl = { layer, legendSel, labels }. Paints the metric over `map`'s
+  // viewport; safe to call repeatedly (old layer is replaced, and a paint
+  // that finishes after a newer call started abandons instead of clobbering).
+  async function paintHeatInto(map, ctl, metricKey) {
+    const def = heatMetricDef(metricKey);
+    if (!def || !map) return;
+    const seq = (ctl.seq = (ctl.seq || 0) + 1);
+    const b = map.getBounds();
+    const box = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    heatLoadingInto(ctl.legendSel, def, box, true);
+    let d;
+    try {
+      d = await fetchHeatGeojson(box);
+    } catch (err) {
+      if (ctl.seq !== seq) return;
+      const el = $(ctl.legendSel);
+      if (el) el.innerHTML = '';
+      toast('Census heat map: ' + err.message);
+      return;
+    }
+    if (ctl.seq !== seq) return; // superseded by a newer metric/viewport paint
+    const feats = (d.features || []).filter((f) => heatValue(def, f.properties) !== null);
+    if (!feats.length) { toast('No census data for this map area — zoom to an urban area'); return; }
+    if (ctl.seq !== seq) return;
+    const vals = feats.map((f) => heatValue(def, f.properties));
+    const min = Math.min(...vals), max = Math.max(...vals);
+    if (ctl.layer) { map.removeLayer(ctl.layer); }
+    ctl.layer = L.geoJSON(d, {
+      filter: (f) => heatValue(def, f.properties) !== null,
+      style: (f) => ({ color: '#334155', weight: 0.5, fillOpacity: 0.55,
+        fillColor: heatColor(def, heatValue(def, f.properties), min, max) }),
+      onEachFeature: (f, layer) => {
+        const props = f.properties;
+        const v = heatValue(def, props);
+        const line = `<strong>${escapeHtml(props.sa2_name_2021)}</strong><br>` +
+          `${escapeHtml(def.label)}: <strong>${heatFmt(def, v)}${def.unit}</strong>` +
+          (def.note ? `<br><span style="color:#64748b">${escapeHtml(def.note)}</span>` : '');
+        if (ctl.labels) {
+          layer.bindTooltip(`<span class="heat-label">${heatFmt(def, v)}${def.unit}</span>`,
+            { permanent: true, direction: 'center', className: 'heat-label-tip',
+              opacity: 0.9 });
+        }
+        layer.bindPopup(line);
+      },
+    });
+    ctl.layer.addTo(map);
+    heatLegendInto(ctl.legendSel, def, min, max);
+  }
+
+  // ------------------------------------------------------------------
+  // Dedicated Heat maps page
+  // ------------------------------------------------------------------
+
+  const hm = { map: null, metric: 'tenure_4', moveTimer: null,
+    ctl: { layer: null, legendSel: '#hm-legend', labels: false } };
+
+  function heatGroupOptions() {
+    const groups = [];
+    HEAT_METRICS.forEach((m) => {
+      let g = groups.find((x) => x.group === m.group);
+      if (!g) groups.push(g = { group: m.group, items: [] });
+      g.items.push(m);
+    });
+    return groups;
+  }
+
+  function initHeatMapsPage() {
+    if (!L) { toast('Map library not loaded'); return; }
+    if (!hm.map) {
+      hm.map = L.map('hm-map', { zoomControl: true }).setView([-25.5, 134.5], 4);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(hm.map);
+      hm.placeLabels = L.tileLayer(LQ_HYBRID_LABELS,
+        { maxZoom: 19, opacity: 0.85, pane: 'shadowPane' }).addTo(hm.map);
+      hm.map.on('moveend', () => {
+        clearTimeout(hm.moveTimer);
+        hm.moveTimer = setTimeout(() => {
+          if (!$('#section-heatmaps').classList.contains('hidden')) {
+            paintHeatInto(hm.map, hm.ctl, hm.metric);
+          }
+        }, 700);
+      });
+      // Start on the property you're analysing when it has coordinates.
+      const meta = activePropertyIndex() != null
+        ? (state.inputs.properties[activePropertyIndex()] || {}).addressMeta : null;
+      if (meta && numOrNull(meta.lat) !== null) hm.map.setView([meta.lat, meta.lon], 12);
+      $('#hm-groups').innerHTML = heatGroupOptions().map((g) =>
+        `<div class="chip-row-label">${escapeHtml(g.group)}</div>
+         <div class="chip-row">${g.items.map((m) =>
+           `<button class="chip ${m.key === hm.metric ? 'active' : ''}"
+             data-hm-metric="${m.key}" title="${escapeHtml(m.note || m.label)}">${escapeHtml(m.label)}</button>`).join('')}</div>`).join('');
+      $('#hm-groups').addEventListener('click', (ev) => {
+        const chip = ev.target.closest('button[data-hm-metric]');
+        if (!chip) return;
+        hm.metric = chip.dataset.hmMetric;
+        $$('#hm-groups .chip').forEach((c) =>
+          c.classList.toggle('active', c.dataset.hmMetric === hm.metric));
+        paintHeatInto(hm.map, hm.ctl, hm.metric);
+      });
+      $('#hm-labels').addEventListener('change', (ev) => {
+        hm.ctl.labels = ev.target.checked;
+        paintHeatInto(hm.map, hm.ctl, hm.metric); // cache hit → instant
+      });
+    }
+    setTimeout(() => { hm.map.invalidateSize(); paintHeatInto(hm.map, hm.ctl, hm.metric); }, 80);
+  }
+
+  const lqHeatCtl = {
+    legendSel: '#lq-heat-legend', labels: false,
+    get layer() { return lq.heat; }, set layer(v) { lq.heat = v; },
+    get seq() { return lq._heatSeq || 0; }, set seq(v) { lq._heatSeq = v; },
+  };
+
+  async function toggleLqHeat(on) {
+    if (!lq.map) return;
+    if (!on) {
+      if (lq.heat) { lq.map.removeLayer(lq.heat); lq.heat = null; }
+      const el = $('#lq-heat-legend');
+      if (el) el.innerHTML = '';
+      return;
+    }
+    const metric = ($('#lq-heat-metric') || {}).value || 'tenure_4';
+    await paintHeatInto(lq.map, lqHeatCtl, metric);
+  }
+
+  // ------------------------------------------------------------------
+  // Deal Check — ten census verdicts for the active property's SA2
+  // ------------------------------------------------------------------
+
+  const dc = { last: null, valuations: new Map() };
+
+  function dealCheckSubject() {
+    const meta = activePropertyIndex() != null
+      ? (state.inputs.properties[activePropertyIndex()] || {}).addressMeta : null;
+    const lat = meta ? numOrNull(meta.lat) : null;
+    const lon = meta ? numOrNull(meta.lon) : null;
+    return (lat !== null && lon !== null) ? { lat, lon, meta } : null;
+  }
+
+  async function fetchDealCheck(lat, lon) {
+    return api(`/api/markets/census/point?lat=${lat}&lon=${lon}`);
+  }
+
+  function dcSuburb() {
+    return (state.suburbs || []).find((s) => s.id === Number(state.inputs.suburbId)) || null;
+  }
+
+  // Price benchmark: the linked suburb row first; a VIC Valuer-General sold
+  // median when the row is missing one (rent/vacancy stay suburb-only).
+  async function dcPriceBenchmark(meta, suburb) {
+    if (suburb && Number(suburb.medianPrice) > 0) return suburb;
+    const name = meta && meta.suburb, stateName = meta && meta.state;
+    if (!name || !stateName) return suburb || null;
+    const key = String(stateName).toUpperCase() + '|' + String(name).toLowerCase();
+    if (!dc.valuations.has(key)) {
+      dc.valuations.set(key,
+        api(`/api/valuation?suburb=${encodeURIComponent(name)}&state=${encodeURIComponent(stateName)}`)
+          .then((d) => (d && d.available && d.latest && d.latest.median)
+            ? Object.assign({}, suburb || {}, {
+                name: d.suburb || name, medianPrice: d.latest.median,
+                medianPriceSource: d.source || 'VIC Valuer-General sales' })
+            : null)
+          .catch(() => null));
+    }
+    const v = await dc.valuations.get(key);
+    return v || suburb || null;
+  }
+
+  // Census verdicts (server-scored) + deal verdicts (engine, client-scored)
+  // blend 50/50 into the overall; a missing half drops out with a note.
+  function buildDealCheckBundle(censusData, inputs, result, suburb, idx) {
+    const i = Number.isInteger(idx) ? idx
+      : (activePropertyIndex() != null ? activePropertyIndex() : 0);
+    const deal = E.dealVerdicts(inputs, (((result || {}).properties || [])[i] || {}).metrics, suburb);
+    const censusVerdicts = ((censusData || {}).verdicts || []).map((v) =>
+      Object.assign({}, v, { group: 'area' }));
+    const verdicts = censusVerdicts.concat(deal.verdicts);
+    const cAvg = ((censusData || {}).overall || {}).score;
+    const parts = [cAvg, deal.avg].filter((x) => x != null);
+    const score = parts.length
+      ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : null;
+    const status = score == null ? 'nodata'
+      : score >= 65 ? 'strong' : score >= 40 ? 'ok' : 'watch';
+    const word = { strong: 'PASS', ok: 'CONDITIONAL', watch: 'CAUTION' };
+    const headline = status === 'nodata' ? 'Not enough data to score this deal.'
+      : deal.avg == null ? ((censusData || {}).overall || {}).headline
+      : cAvg == null ? `Deal numbers look ${status === 'watch' ? 'weak' : 'sound'} — census scoring unavailable.`
+      : {
+          strong: 'Area and deal fundamentals support this one.',
+          ok: 'Mixed fundamentals — work the flags below.',
+          watch: 'Fundamentals are weak overall — proceed only with a clear thesis.',
+        }[status];
+    const ranked = verdicts.filter((v) => v.score != null)
+      .slice().sort((a, b) => b.score - a.score);
+    const overall = {
+      score, status, verdictWord: score == null ? '—' : word[status], headline,
+      drivers: { for: ranked.slice(0, 2).map((v) => v.question),
+                 against: ranked.slice(-2).reverse()
+                   .filter((v) => v.score < 50).map((v) => v.question) },
+    };
+    return { sa2: (censusData || {}).sa2 || null,
+             verdicts, overall, source: (censusData || {}).source || null };
+  }
+
+  function dcOrdinal(n) {
+    const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  function dcNum(v, dp) {
+    if (v == null || !Number.isFinite(Number(v))) return null;
+    const d = dp != null ? dp : 0;
+    return d ? Number(v).toFixed(d) : Math.round(Number(v)).toLocaleString();
+  }
+
+  function dcMoneyOrUnit(v, unit, dp) {
+    const n = dcNum(v, dp);
+    return n == null ? '—' : (unit === '$' ? '$' + n : n + unit);
+  }
+
+  function dcChip(m) {
+    const bits = [];
+    if (m.percentile != null) bits.push(dcOrdinal(m.percentile) + ' pct');
+    const bm = dcNum(m.benchmark, m.dp);
+    if (bm != null) bits.push((m.percentile != null ? 'median ' : 'suburb ')
+      + bm + (m.unit === '$' ? '' : m.unit));
+    const sub = bits.join(' · ') || m.note || '';
+    return `<div class="dc-chip" title="${escapeHtml(m.note || '')}">
+      <span class="dc-chip-label">${escapeHtml(m.label)}</span>
+      <span class="dc-chip-val"><strong>${escapeHtml(dcMoneyOrUnit(m.value, m.unit, m.dp))}</strong>
+      ${sub ? `<small>${escapeHtml(sub)}</small>` : ''}</span>
+    </div>`;
+  }
+
+  function dcCard(v) {
+    return `<div class="dc-card dc-${v.status}">
+      <div class="dc-card-head">
+        <span class="dc-pill">${v.status === 'strong' ? 'STRONG' : v.status === 'ok' ? 'OK' : v.status === 'watch' ? 'WATCH' : 'NO DATA'}</span>
+        <span class="dc-card-score">${v.score != null ? v.score + '/100' : ''}</span>
+      </div>
+      <div class="dc-card-q">${escapeHtml(v.question)}</div>
+      <div class="dc-card-headline">${escapeHtml(v.headline)}</div>
+      ${(v.metrics || []).map(dcChip).join('')}
+    </div>`;
+  }
+
+  function renderDealCheck(bundle, opts) {
+    const o = bundle.overall || {};
+    const drivers = o.drivers || {};
+    const driverLine = (drivers.for || []).length || (drivers.against || []).length
+      ? `<div class="dc-drivers">${[
+          (drivers.for || []).length ? `For: ${escapeHtml(drivers.for.join(' · '))}` : '',
+          (drivers.against || []).length ? `Against: ${escapeHtml(drivers.against.join(' · '))}` : '',
+        ].filter(Boolean).join('</div><div class="dc-drivers">')}</div>` : '';
+    const groupHtml = [['area', 'The area — census fundamentals'],
+                       ['deal', 'The deal — your numbers']].map(([g, label]) => {
+      const list = (bundle.verdicts || []).filter((v) => v.group === g);
+      if (!list.length) return '';
+      return `<div class="chip-row-label">${escapeHtml(label)}</div>
+        <div class="dc-grid">${list.map(dcCard).join('')}</div>`;
+    }).join('');
+    const suburbHint = opts && opts.suburbLinked === false
+      ? `<div class="dc-empty" style="margin-bottom:.8rem">Tip — link a suburb or analyse a located VIC address to unlock the price, rent, vacancy and growth checks.</div>` : '';
+    $('#dc-body').innerHTML = `
+      <div class="dc-banner dc-${o.status || 'nodata'}">
+        <div class="dc-banner-word">${escapeHtml(o.verdictWord || '—')}</div>
+        <div class="dc-banner-copy">
+          <div><strong>${escapeHtml((bundle.sa2 || {}).name || 'Area not located')}</strong> — ${escapeHtml(o.headline || '')}</div>
+          ${driverLine}
+        </div>
+        <div class="dc-banner-score">${o.score != null ? o.score : '—'}<small>/100</small></div>
+      </div>
+      ${suburbHint}
+      ${groupHtml}
+      ${bundle.source ? `<div class="source-note">${escapeHtml(bundle.source)} — area percentiles compare this SA2 with all of Australia; deal verdicts score your numbers against the linked suburb. Pair with cash flow before deciding.</div>` : ''}`;
+  }
+
+  async function initDealCheckPage(force) {
+    const host = $('#dc-body');
+    if (!host) return;
+    const suburbRow = dcSuburb();
+    const subj = dealCheckSubject();
+    if (!subj && !suburbRow) {
+      host.innerHTML = `<div class="dc-empty">Locate the property address or link a suburb (Investment inputs → suburb selector) — the deal check scores the area and your numbers.</div>`;
+      return;
+    }
+    let census = (dc.last && subj && dc.last.lat === subj.lat && dc.last.lon === subj.lon)
+      ? dc.last.data : null;
+    if (subj && !census) {
+      host.innerHTML = `<div class="heat-loading"><span class="heat-spin"></span>Scoring the area against the national census…</div>`;
+      try {
+        census = await fetchDealCheck(subj.lat, subj.lon);
+      } catch (err) {
+        host.innerHTML = `<div class="dc-empty">Deal check unavailable: ${escapeHtml(err.message)}</div>`;
+        return;
+      }
+    }
+    const suburb = await dcPriceBenchmark(subj && subj.meta, suburbRow);
+    const bundle = buildDealCheckBundle(census, state.inputs, state.result, suburb);
+    dc.last = subj ? { lat: subj.lat, lon: subj.lon, data: census, bundle } : { data: census, bundle };
+    renderDealCheck(bundle, { suburbLinked: !!suburb });
+  }
+
+  window.PropertyAnalyserDealCheck = { run: initDealCheckPage, last: () => dc.last };
 
   // ------------------------------------------------------------------
   // Announcement strip + first-run tour
@@ -848,8 +1864,10 @@
   function renderPortfolioSnapshot() {
     const root = $('#portfolio-kpis');
     if (!root) return;
-    const result = state.result, metrics = result && result.metrics;
-    const props = (result && result.properties) || [], inputs = state.inputs || {};
+    const result = state.result, props = (result && result.properties) || [], inputs = state.inputs || {};
+    const roll = state.ownedResult;   // purchased-only portfolio — what roll-ups count
+    const metrics = roll && roll.metrics;
+    const ownedCount = roll ? roll.properties.length : 0;
     const money = (v) => Number.isFinite(Number(v)) ? fmtMoney(Number(v)) : '—';
     const weekly = metrics ? Number(metrics.weeklyOutOfPocket || 0) : null;
     const annual = weekly === null ? null : weekly * 52;
@@ -866,12 +1884,15 @@
     ];
     root.innerHTML = cards.map(x => '<div class="portfolio-kpi ' + x[3] + '"><div class="portfolio-kpi-label">' + escapeHtml(x[0]) + '</div><div class="portfolio-kpi-value">' + escapeHtml(x[1]) + '</div><div class="portfolio-kpi-note">' + escapeHtml(x[2]) + '</div></div>').join('');
     const context = $('#portfolio-snapshot-context');
-    if (context) context.textContent = inputs.scenarioName || 'Unsaved scenario';
+    if (context) context.textContent = (inputs.scenarioName || 'Unsaved scenario') +
+      (props.length !== ownedCount
+        ? ` — ${ownedCount} of ${props.length} counted (purchased only)`
+        : '');
     const hero = $('#dashboard-hero-metrics');
     if (hero) {
-      const count = props.length + (pporValue > 0 ? 1 : 0);
+      const count = ownedCount + (pporValue > 0 ? 1 : 0);
       const investmentDebt = metrics ? Number(metrics.ipLoanAmount) || 0 : 0;
-      const firstProjection = result && result.rows && result.rows[0] || {};
+      const firstProjection = roll && roll.rows && roll.rows[0] || {};
       const projectedDebt = Number(firstProjection.totalDebt);
       const totalDebt = Number.isFinite(projectedDebt) ? projectedDebt : investmentDebt + pporDebt;
       const currentEquity = totalPropertyAssets - totalDebt;
@@ -908,6 +1929,7 @@
       portfolioHomes.push({
         kind: 'INVESTMENT PROPERTY', label: raw.label || raw.address || ('Investment property ' + (i + 1)),
         location: (raw.addressMeta && [raw.addressMeta.suburb, raw.addressMeta.state].filter(Boolean).join(', ')) || raw.address || 'Location not added',
+        status: p.ownershipStatus || 'considering',
         value: Number(m.purchasePrice || raw.purchasePrice || 0), valueLabel: 'Purchase price',
         debt: Number(m.ipLoanAmount || 0), equity: Number(m.tenYearEquity || 0),
         yield: m.grossYield, cash: m.weeklyOutOfPocket,
@@ -918,7 +1940,9 @@
     if (gallery) gallery.innerHTML = portfolioHomes.length ? portfolioHomes.map((p, i) =>
       '<article class="dashboard-home-card">' +
         '<div class="dashboard-home-photo"><img src="' + p.image + '" alt="Representative exterior of ' + escapeHtml(p.label) + '" loading="lazy"><span class="dashboard-home-kind">' + escapeHtml(p.kind) + '</span></div>' +
-        '<div class="dashboard-home-content"><div class="dashboard-home-title">' + escapeHtml(p.label) + '</div><div class="dashboard-home-location">' + escapeHtml(p.location) + '</div>' +
+        '<div class="dashboard-home-content"><div class="dashboard-home-title">' + escapeHtml(p.label) +
+        (p.status && p.status !== 'purchased' ? ' <span class="status-chip ' + p.status + '">' + STATUS_LABELS[p.status] + '</span>' : '') +
+        '</div><div class="dashboard-home-location">' + escapeHtml(p.location) + '</div>' +
         '<div class="dashboard-home-value">' + money(p.value) + '</div><div class="dashboard-home-value-label">' + escapeHtml(p.valueLabel || 'Entered value') + '</div><div class="dashboard-home-stats">' +
         '<span><small>' + (p.kind.startsWith('PPOR') ? 'Mortgage' : 'Loan balance') + '</small><strong>' + money(p.debt) + '</strong></span>' +
         '<span><small>' + (p.kind.startsWith('PPOR') ? 'Current equity' : '10-yr projected equity') + '</small><strong>' + money(p.equity) + '</strong></span>' +
@@ -956,63 +1980,84 @@
     const root = $('#dashboard-market-intel');
     if (!root) return;
     const inputs = state.inputs || {};
-    const first = (inputs.properties || []).find((p) => p && p.address);
-    const meta = first && first.addressMeta || {};
     const suburb = currentSuburb() || {};
-    const cards = [];
-    const add = (label, value, note) => cards.push(
-      '<div class="dashboard-market-item"><small>' + escapeHtml(label) + '</small><strong>' + escapeHtml(value) + '</strong><span>' + escapeHtml(note || '') + '</span></div>'
-    );
-    if (first && numOrNull(meta.lat) !== null && numOrNull(meta.lon) !== null) {
-      const key = inputs.properties.indexOf(first) + ':' + Number(meta.lat).toFixed(4) + ',' + Number(meta.lon).toFixed(4);
-      const intelData = intel.cache[key];
-      const parcel = intelData && intelData.parcel || {};
-      if (intelData && intelData.jurisdiction === 'VIC') {
-        add('Land parcel area', parcel.areaSqm ? fmtNum(parcel.areaSqm) + ' m²' : 'Not returned', 'Vicmap Property · CC BY 4.0');
-        add('Property reference', parcel.propertyReference || 'Not matched', 'Victorian cadastral record');
-        add('Council reference', parcel.propertyNumber || 'Not available', 'Vicmap property attribute');
-      } else if (intelData && parcel) {
-        add('Land parcel area', parcel.areaSqm ? fmtNum(parcel.areaSqm) + ' m²' : 'Not returned', 'Queensland Government spatial data');
-        add('Lot / plan', parcel.lotPlan || 'Not returned', 'Queensland cadastral record');
-        add('Local government', parcel.lga || 'Not returned', 'Queensland Government');
+    const section = (heading, items) =>
+      '<div class="dashboard-market-group"><div class="dashboard-market-heading">' + escapeHtml(heading) + '</div>' +
+      '<div class="dashboard-market-grid">' + items.join('') + '</div></div>';
+    const addItem = (label, value, note) =>
+      '<div class="dashboard-market-item"><small>' + escapeHtml(label) + '</small><strong>' + escapeHtml(value) + '</strong><span>' + escapeHtml(note || '') + '</span></div>';
+
+    const groups = [];
+    (inputs.properties || []).forEach((p, idx) => {
+      if (!p || !p.address) return;
+      const meta = p.addressMeta || {};
+      const lat = numOrNull(meta.lat);
+      const lon = numOrNull(meta.lon);
+      const items = [];
+      if (lat !== null && lon !== null) {
+        const key = idx + ':' + lat.toFixed(4) + ',' + lon.toFixed(4);
+        const intelData = intel.cache[key];
+        const parcel = intelData && intelData.parcel || {};
+        if (intelData && intelData.jurisdiction === 'VIC') {
+          items.push(addItem('Land parcel area', parcel.areaSqm ? fmtNum(parcel.areaSqm) + ' m²' : 'Not returned', 'Vicmap Property · CC BY 4.0'));
+          items.push(addItem('Property reference', parcel.propertyReference || 'Not matched', 'Victorian cadastral record'));
+          items.push(addItem('Council reference', parcel.propertyNumber || 'Not available', 'Vicmap property attribute'));
+          items.push(addItem('Bushfire prone', bushfireLabel(intelData), 'CFA designated BPA · Victoria'));
+        } else if (intelData && parcel) {
+          items.push(addItem('Land parcel area', parcel.areaSqm ? fmtNum(parcel.areaSqm) + ' m²' : 'Not returned', 'Queensland Government spatial data'));
+          items.push(addItem('Lot / plan', parcel.lotPlan || 'Not returned', 'Queensland cadastral record'));
+          items.push(addItem('Local government', parcel.lga || 'Not returned', 'Queensland Government'));
+        } else if (intelData) {
+          items.push(addItem('Property parcel', 'Not matched', 'No parcel at this coordinate'));
+        } else if (intel.loadErrors[key]) {
+          items.push(addItem('Property parcel', 'Unavailable', intel.loadErrors[key]));
+        } else {
+          items.push(addItem('Property parcel', 'Loading…', 'Address coordinates available'));
+          loadDashboardPropertyIntel(p, key);
+        }
       } else {
-        add('Property parcel', 'Loading…', 'Address coordinates available');
-        loadDashboardPropertyIntel(first, key);
+        const sub = currentSuburb();
+        items.push(addItem('Property parcel', 'Address needed',
+          sub ? 'Not confirmed yet — the Property page shows ' + sub.name + ' suburb data meanwhile'
+              : 'Pick the address from the dropdown in Inputs so it can be located'));
       }
-    } else {
-      add('Property parcel', 'Address needed', 'Add and locate an investment property');
-    }
-    if (suburb.medianPrice != null) add('Suburb median sale', fmtMoney(suburb.medianPrice), sourceNote(suburb, 'medianPrice') || 'Saved suburb reference data');
-    if (suburb.medianRent3Bed != null) add('3-bed median rent', fmtMoney(suburb.medianRent3Bed) + '/wk', sourceNote(suburb, 'medianRent3Bed') || 'Saved suburb reference data');
-    if (suburb.medianRent4Bed != null) add('4-bed median rent', fmtMoney(suburb.medianRent4Bed) + '/wk', sourceNote(suburb, 'medianRent4Bed') || 'Saved suburb reference data');
-    if (suburb.vacancyPct != null) add('Vacancy rate', Number(suburb.vacancyPct).toFixed(1) + '%', sourceNote(suburb, 'vacancyPct') || 'Saved suburb reference data');
-    if (suburb.growth5yrPct != null) add('5-year price growth', Number(suburb.growth5yrPct).toFixed(1) + '%', sourceNote(suburb, 'growth5yrPct') || 'Saved suburb reference data');
-    if (cards.length === 0) {
-      root.innerHTML = '<div class="empty-note">No property or suburb intelligence is available yet. Add a located address and suburb market data.</div>';
-      return;
-    }
-    root.innerHTML = cards.join('');
+      groups.push(section(ipLabel(p, idx) + (meta.suburb ? ' · ' + meta.suburb : ''), items));
+    });
+
+    const suburbItems = [];
+    if (!suburb.name) suburbItems.push(addItem('Suburb reference', 'Not set', 'Pick the suburb in Inputs to attach market data'));
+    if (suburb.medianPrice != null) suburbItems.push(addItem('Suburb median sale', fmtMoney(suburb.medianPrice), sourceNote(suburb, 'medianPrice') || 'Saved suburb reference data'));
+    if (suburb.medianRent3Bed != null) suburbItems.push(addItem('3-bed median rent', fmtMoney(suburb.medianRent3Bed) + '/wk', sourceNote(suburb, 'medianRent3Bed') || 'Saved suburb reference data'));
+    if (suburb.medianRent4Bed != null) suburbItems.push(addItem('4-bed median rent', fmtMoney(suburb.medianRent4Bed) + '/wk', sourceNote(suburb, 'medianRent4Bed') || 'Saved suburb reference data'));
+    if (suburb.vacancyPct != null) suburbItems.push(addItem('Vacancy rate', Number(suburb.vacancyPct).toFixed(1) + '%', sourceNote(suburb, 'vacancyPct') || 'Saved suburb reference data'));
+    if (suburb.growth5yrPct != null) suburbItems.push(addItem('5-year price growth', Number(suburb.growth5yrPct).toFixed(1) + '%', sourceNote(suburb, 'growth5yrPct') || 'Saved suburb reference data'));
+    if (suburbItems.length) groups.push(section('Suburb reference · ' + (suburb.name || 'none selected'), suburbItems));
+
+    root.innerHTML = groups.length
+      ? groups.join('')
+      : '<div class="empty-note">No property or suburb intelligence is available yet. Add a located address and suburb market data.</div>';
   }
 
   function loadDashboardPropertyIntel(property, key) {
-    if (!property || !property.addressMeta || !key || intel.loadingKey === key) return;
+    if (!property || !property.addressMeta || !key || intel.loadingKeys.has(key)) return;
     const meta = property.addressMeta;
     const lat = numOrNull(meta.lat), lon = numOrNull(meta.lon);
     if (lat === null || lon === null) return;
-    intel.loadingKey = key;
+    intel.loadingKeys.add(key);
     const jurisdiction = String(meta.state || state.inputs.state || '').toUpperCase();
     const isVic = jurisdiction === 'VIC' || jurisdiction === 'VICTORIA';
     api((isVic ? '/api/intel/vic-property' : '/api/intel/property') + '?lat=' + lat + '&lon=' + lon)
       .then((data) => {
         intel.cache[key] = data;
+        delete intel.loadErrors[key];
         renderDashboardMarketIntel();
         if (propertySectionVisible()) renderProperty();
       })
       .catch((err) => {
-        const root = $('#dashboard-market-intel');
-        if (root) root.innerHTML += '<div class="dashboard-data-footnote">Property data unavailable: ' + escapeHtml(err.message) + '</div>';
+        intel.loadErrors[key] = err.message;
+        renderDashboardMarketIntel();
       })
-      .finally(() => { intel.loadingKey = null; });
+      .finally(() => { intel.loadingKeys.delete(key); });
   }
 
   function renderDashboard(list) {
@@ -1213,15 +2258,38 @@
 
   const intel = {
     cache: {},      // cache key -> payload
+    loadingKeys: new Set(),
+    loadErrors: {}, // cache key -> last error message
     map: null,
     base: null,     // current basemap tile layer
-    bushfire: null, // bushfire tile layer
+    bushfire: null, // QLD bushfire-prone tile layer
+    bushfireVic: null, // VIC bushfire-prone WMS layer
+    bushfireKind: null, // 'qld' | 'vic' — which layer the chip toggles
     parcel: null,   // layer group: parcel outline
     flood: null,    // layer group: flood study extent
     marker: null,   // circle marker
     overlays: { parcel: true, bushfire: false, flood: false },
     seq: 0,
   };
+
+  // The chip toggles whichever bushfire layer matches the property's state.
+  function bushfireLayer() {
+    if (!window.L) return null;
+    if (intel.bushfireKind === 'vic') {
+      if (!intel.bushfireVic) {
+        intel.bushfireVic = L.tileLayer.wms(
+          'https://opendata.maps.vic.gov.au/geoserver/wms', {
+            layers: 'open-data-platform:bushfire_prone_area',
+            format: 'image/png8', transparent: true, opacity: 0.45, maxZoom: 19,
+          });
+      }
+      return intel.bushfireVic;
+    }
+    if (!intel.bushfire) {
+      intel.bushfire = L.tileLayer(BUSHFIRE_TILES, { maxZoom: 19, opacity: 0.45 });
+    }
+    return intel.bushfire;
+  }
 
   function numOrNull(v) {
     if (v === null || v === undefined || v === '') return null;
@@ -1250,22 +2318,168 @@
     return { type: 'Polygon', coordinates: rings };
   }
 
+  // ------------------------------------------------------------------
+  // Property documents — due-diligence files shared with clients
+  // ------------------------------------------------------------------
+
+  function fmtBytes(n) {
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if (n >= 1024) return Math.round(n / 1024) + ' KB';
+    return n + ' B';
+  }
+
+  async function loadDocs() {
+    const list = $('#doc-list');
+    if (!list) return;
+    if (!state.scenarioId) {
+      list.innerHTML = '<div class="source-note">Save the scenario first — documents attach to a saved property.</div>';
+      return;
+    }
+    try {
+      const docs = await api(`/api/scenarios/${state.scenarioId}/attachments`);
+      renderDocs(docs);
+    } catch (err) {
+      list.innerHTML = '<div class="source-note">Could not load documents: ' + escapeHtml(err.message) + '</div>';
+    }
+  }
+
+  function renderDocs(docs) {
+    const list = $('#doc-list');
+    if (!list) return;
+    list.innerHTML = (docs || []).length ? docs.map((d) => `
+      <div class="doc-row">
+        <a href="/api/attachments/${d.id}/file" target="_blank" rel="noopener">${escapeHtml(d.displayName)}</a>
+        <span class="source-note">${fmtBytes(d.bytes)}</span>
+        <button data-doc-del="${d.id}" class="danger" title="Remove this document">Remove</button>
+      </div>`).join('')
+      : '<div class="source-note">No documents yet — clients see everything listed here on their shared link.</div>';
+  }
+
+  $('#doc-add').addEventListener('click', () => {
+    if (!state.scenarioId) { toast('Save the scenario first'); return; }
+    $('#doc-file').click();
+  });
+
+  $('#doc-file').addEventListener('change', async () => {
+    const files = [...$('#doc-file').files];
+    $('#doc-file').value = '';
+    if (!files.length) return;
+    if (!state.scenarioId) { toast('Save the scenario first'); return; }
+    let uploaded = 0;
+    for (const f of files) {
+      const fd = new FormData();
+      fd.append('file', f);
+      try {
+        const resp = await fetch(`/api/scenarios/${state.scenarioId}/attachments`, {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + getToken() },
+          body: fd,
+        });
+        const body = await resp.json();
+        if (!body.ok) throw new Error(body.error || 'upload failed');
+        renderDocs(body.data);
+        uploaded += 1;
+      } catch (err) {
+        $('#doc-msg').textContent = `${f.name}: ${err.message}`;
+        toast(`Could not upload ${f.name}: ${err.message}`);
+      }
+    }
+    if (uploaded) {
+      $('#doc-msg').textContent = `Uploaded ${uploaded} document${uploaded === 1 ? '' : 's'} — visible on existing client links`;
+      toast('Documents uploaded');
+    }
+  });
+
+  $('#doc-list').addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button[data-doc-del]');
+    if (!btn) return;
+    if (!confirm('Remove this document? Clients will no longer see it.')) return;
+    try {
+      await api('/api/attachments/' + btn.dataset.docDel, { method: 'DELETE' });
+      loadDocs();
+      toast('Document removed');
+    } catch (err) { toast('Error: ' + err.message); }
+  });
+
+  // Suburb reference cards reuse the Area page's saved suburb data so a
+  // not-yet-confirmed property still shows real market context.
+  function suburbReferenceCards(suburb) {
+    const items = [
+      ['Suburb', suburb.name + (suburb.postcode ? ' ' + suburb.postcode : ''),
+        'Saved suburb reference data'],
+      ['Median sale', suburb.medianPrice != null ? fmtMoney(suburb.medianPrice) : null,
+        sourceNote(suburb, 'medianPrice') || 'Saved suburb reference data'],
+      ['3-bed median rent', suburb.medianRent3Bed != null
+        ? fmtMoney(suburb.medianRent3Bed) + '/wk' : null,
+        sourceNote(suburb, 'medianRent3Bed') || 'Saved suburb reference data'],
+      ['4-bed median rent', suburb.medianRent4Bed != null
+        ? fmtMoney(suburb.medianRent4Bed) + '/wk' : null,
+        sourceNote(suburb, 'medianRent4Bed') || 'Saved suburb reference data'],
+      ['Vacancy rate', suburb.vacancyPct != null
+        ? Number(suburb.vacancyPct).toFixed(1) + '%' : null,
+        sourceNote(suburb, 'vacancyPct') || 'Saved suburb reference data'],
+      ['5-year growth', suburb.growth5yrPct != null
+        ? Number(suburb.growth5yrPct).toFixed(1) + '%' : null,
+        sourceNote(suburb, 'growth5yrPct') || 'Saved suburb reference data'],
+    ].filter((i) => i[1] !== null);
+    return items.map(([l, v, s]) => card(l, escapeHtml(v), escapeHtml(s))).join('');
+  }
+
+  // VIC Valuer-General sold medians (free data; other states are paid
+  // products). Shows a clearly-labelled suburb-median guide next to the
+  // parcel cards — works before AND after the address is confirmed.
+  const valGuideCache = {};
+
+  async function loadValuationGuide(meta) {
+    const el = $('#valuation-guide');
+    if (!el) return;
+    const suburb = String((meta && meta.suburb) || '').trim();
+    const st = String((meta && meta.state) || state.inputs.state || '').toUpperCase();
+    if (!suburb || st !== 'VIC') { el.innerHTML = ''; return; }
+    const key = st + ':' + suburb.toLowerCase();
+    if (valGuideCache[key] === undefined) {
+      try {
+        valGuideCache[key] = await api('/api/valuation?suburb='
+          + encodeURIComponent(suburb) + '&state=' + st);
+      } catch (err) { valGuideCache[key] = null; }
+    }
+    const d = valGuideCache[key];
+    if (!d || !d.available || !d.latest) { el.innerHTML = ''; return; }
+    const l = d.latest, g = d.guide;
+    el.innerHTML = '<div class="cards">'
+      + card('Sold median — ' + escapeHtml(l.dwellingType), fmtMoney(l.median),
+             escapeHtml((l.period || '') + ' · ' + (d.source || 'VIC Valuer-General')))
+      + (g ? card('Indicative range', fmtMoney(g.low) + ' – ' + fmtMoney(g.high),
+                  'Suburb median ±10% — a guide from sold data, not a valuation') : '')
+      + '</div>';
+  }
+
   function renderProperty() {
     const idx = activePropertyIndex();
     const p = state.inputs.properties[idx];
     if (!p) return;
+    loadDocs();
     const meta = p.addressMeta || {};
     const lat = numOrNull(meta.lat);
     const lon = numOrNull(meta.lon);
 
     const mapWrap = $('#section-property .prop-map-wrap');
     if (mapWrap) mapWrap.classList.toggle('is-unlocated', lat === null || lon === null);
+    loadValuationGuide(meta);
     if (lat === null || lon === null) {
+      // Not confirmed yet — don't blank the page. Suburb-level reference
+      // data shows until the parcel lookup can run.
+      const suburb = currentSuburb();
       setPropertyStatus(p.address
-        ? 'No map coordinates for this address — pick it from the dropdown in Inputs (or type the full address and click away) so we can locate the parcel.'
-        : 'No address yet. Add one in Inputs to load available government property data.');
-      $('#property-cards').innerHTML = '';
-      $('#property-details').innerHTML = '';
+        ? (suburb
+          ? 'Suburb view — showing ' + suburb.name + ' reference data until this address is confirmed. Pick it from the dropdown in Inputs (or type the full address and click away) to load the parcel.'
+          : 'No map coordinates for this address — pick it from the dropdown in Inputs (or type the full address and click away) so we can locate the parcel.')
+        : 'No address yet. Add one in Inputs — suburb reference data shows meanwhile.');
+      $('#property-cards').innerHTML = suburb ? suburbReferenceCards(suburb) : '';
+      $('#property-details').innerHTML = suburb
+        ? '<div class="note">Suburb-level data for ' + escapeHtml(suburb.name)
+          + ' — parcel, land-use and flood detail load once the address is confirmed.</div>'
+        : '';
       $('#property-sources').innerHTML = '';
       clearIntelMap();
       return;
@@ -1310,11 +2524,23 @@
     return card(label, escapeHtml(value), sub ? escapeHtml(sub) : '', cls);
   }
 
+  function bushfireLabel(d) {
+    const b = d && d.bushfire;
+    if (!b || b.prone === null || b.prone === undefined) return 'Unknown';
+    return b.prone ? 'Yes — designated BPA' : 'No';
+  }
+
   function renderVicIntel(d) {
-    ['#prop-ov-bushfire', '#prop-ov-flood', '#prop-base-topo'].forEach((sel) => {
+    intel.bushfireKind = 'vic';
+    ['#prop-ov-flood', '#prop-base-topo'].forEach((sel) => {
       const el = $(sel);
       if (el) el.classList.add('hidden');
     });
+    const bfChip = $('#prop-ov-bushfire');
+    if (bfChip) {
+      bfChip.classList.remove('hidden');
+      bfChip.textContent = 'Bushfire prone (VIC)';
+    }
     const p = d.parcel || {};
     const area = p.areaSqm ? fmtNum(p.areaSqm) + ' m²' : 'Not available';
     $('#property-cards').innerHTML = [
@@ -1324,6 +2550,7 @@
       intelCard('Property type code', p.propertyTypeCode || '—', 'Raw Vicmap classification code'),
       intelCard('Multi-assessment', p.multiAssessment || '—', 'Vicmap property attribute'),
       intelCard('Parcel status', p.statusCode || '—', 'Vicmap status code'),
+      intelCard('Bushfire prone area', bushfireLabel(d), 'CFA designated BPA · toggle the map overlay'),
     ].join('');
     const rows = [];
     const row = (k, v) => { if (v !== null && v !== undefined && v !== '') rows.push('<div class="k">' + escapeHtml(k) + '</div><div class="v">' + escapeHtml(String(v)) + '</div>'); };
@@ -1343,7 +2570,13 @@
   }
 
   function renderIntel(d) {
-    ['#prop-ov-bushfire', '#prop-ov-flood', '#prop-base-topo'].forEach((sel) => {
+    intel.bushfireKind = 'qld';
+    const bfChip = $('#prop-ov-bushfire');
+    if (bfChip) {
+      bfChip.classList.remove('hidden');
+      bfChip.textContent = 'Bushfire prone';
+    }
+    ['#prop-ov-flood', '#prop-base-topo'].forEach((sel) => {
       const el = $(sel);
       if (el) el.classList.remove('hidden');
     });
@@ -1421,7 +2654,6 @@
       intel.base = L.tileLayer(INTEL_BASEMAPS.sat.url, {
         maxZoom: 19, attribution: INTEL_BASEMAPS.sat.attribution,
       }).addTo(intel.map);
-      intel.bushfire = L.tileLayer(BUSHFIRE_TILES, { maxZoom: 19, opacity: 0.45 });
       intel.parcel = L.layerGroup();
       intel.flood = L.layerGroup();
       bindIntelControls();
@@ -1466,10 +2698,13 @@
     } else if (intel.parcel && intel.map.hasLayer(intel.parcel)) {
       intel.map.removeLayer(intel.parcel);
     }
-    if (intel.overlays.bushfire && intel.bushfire) {
-      if (!intel.map.hasLayer(intel.bushfire)) intel.bushfire.addTo(intel.map);
-    } else if (intel.bushfire && intel.map.hasLayer(intel.bushfire)) {
-      intel.map.removeLayer(intel.bushfire);
+    const activeBf = bushfireLayer();
+    const staleBf = activeBf === intel.bushfire ? intel.bushfireVic : intel.bushfire;
+    if (staleBf && intel.map.hasLayer(staleBf)) intel.map.removeLayer(staleBf);
+    if (intel.overlays.bushfire && activeBf) {
+      if (!intel.map.hasLayer(activeBf)) activeBf.addTo(intel.map);
+    } else if (activeBf && intel.map.hasLayer(activeBf)) {
+      intel.map.removeLayer(activeBf);
     }
     if (intel.overlays.flood && intel.flood) {
       if (!intel.map.hasLayer(intel.flood)) intel.flood.addTo(intel.map);
@@ -1673,6 +2908,8 @@
   function recalc() {
     try {
       state.result = E.calculateAll(state.inputs, { suburb: currentSuburb() });
+      const oi = E.ownedInputs(state.inputs);
+      state.ownedResult = oi ? E.calculateAll(oi, { suburb: currentSuburb() }) : null;
       updateInputGuide();
     } catch (err) {
       console.error('calculation failed', err);
@@ -1795,6 +3032,8 @@
 
   function ipLabel(p, i) { return (p && p.label) || `Investment property ${i + 1}`; }
 
+  const STATUS_LABELS = { considering: 'Considering', under_offer: 'Under offer', purchased: 'Purchased' };
+
   // The label is shown on the tab strip at the top of the Inputs pane and in
   // the pane title, so renaming a property has to redraw both.
   function refreshIpLabels() {
@@ -1813,22 +3052,29 @@
     return set;
   }
 
-  function buildPropTabs() {
-    const bar = $('#prop-tabs');
-    if (!bar) return;
+  function propTabStripHtml(opts) {
+    opts = opts || {};
     const props = state.inputs.properties;
     const warns = propWarnIndexes();
     const plain = (val, label) =>
       `<span class="prop-tab ${state.inputTab === val ? 'active' : ''}" data-prop-tab="${val}">${label}</span>`;
     const ipTabs = props.map((p, i) => {
-      const remove = props.length > 1
+      const remove = !opts.selector && props.length > 1
         ? `<button class="prop-remove" data-prop-remove="${i}" title="Remove this property">×</button>`
         : '';
       return `<span class="prop-tab ${state.inputTab === i ? 'active' : ''} ${warns.has(i) ? 'has-warn' : ''}" data-prop-tab="${i}">${escapeHtml(ipLabel(p, i))}${remove}</span>`;
     }).join('');
+    if (opts.selector) return ipTabs; // intel strip: investment properties only
     const atCap = props.length >= E.MAX_PROPERTIES;
-    bar.innerHTML = plain('portfolio', 'Portfolio') + plain('ppor', 'PPOR') + ipTabs +
+    return plain('portfolio', 'Portfolio') + plain('ppor', 'PPOR') + ipTabs +
       `<button class="prop-tab prop-tab-add" data-prop-add ${atCap ? 'disabled' : ''}>+ Add property</button>`;
+  }
+
+  function buildPropTabs() {
+    const bar = $('#prop-tabs');
+    if (bar) bar.innerHTML = propTabStripHtml();
+    const intelBar = $('#prop-tabs-intel');
+    if (intelBar) intelBar.innerHTML = propTabStripHtml({ selector: true });
   }
 
 
@@ -1859,7 +3105,9 @@
     if (propertySectionVisible()) renderProperty();
   }
 
-  $('#prop-tabs').addEventListener('click', (ev) => {
+  // Tab clicks work from both the Inputs strip and the Property intelligence
+  // strip — they share the same active-property concept.
+  document.addEventListener('click', (ev) => {
     if (ev.target.closest('[data-prop-add]')) { addProperty(); return; }
     const rm = ev.target.closest('[data-prop-remove]');
     if (rm) {
@@ -1867,7 +3115,7 @@
       removeProperty(Number(rm.dataset.propRemove));
       return;
     }
-    const t = ev.target.closest('[data-prop-tab]');
+    const t = ev.target.closest('#prop-tabs [data-prop-tab], #prop-tabs-intel [data-prop-tab]');
     if (!t) return;
     const val = t.dataset.propTab;
     setActiveTab(val === 'portfolio' || val === 'ppor' ? val : Number(val));
@@ -1884,6 +3132,7 @@
     clone.label = '';
     clone.address = '';
     clone.addressMeta = null;
+    clone.ownershipStatus = 'considering';
     props.push(clone);
     saveDraft();
     setActiveTab(props.length - 1);
@@ -1910,8 +3159,17 @@
   }
 
   // Result views: -1 = portfolio, else one property's own numbers.
-  function viewData() {
-    const r = state.result;
+  function viewData(opts) {
+    // opts.owned: portfolio roll-ups read the purchased-only result. Only
+    // meaningful in the portfolio view — a selected per-property view always
+    // uses the full result (filtering re-indexes properties, so state.viewProp
+    // indexes into ownedResult would point at the wrong property).
+    const owned = opts && opts.owned && state.viewProp < 0;
+    const r = (owned && state.ownedResult) ? state.ownedResult : state.result;
+    if (owned && !state.ownedResult) {
+      return { ownedEmpty: true, isPortfolio: true, property: null, exit: null,
+        rows: [], upfront: null, propInputs: null, metrics: null };
+    }
     if (state.viewProp >= 0 && r.properties[state.viewProp]) {
       const p = r.properties[state.viewProp];
       return {
@@ -1969,13 +3227,15 @@
   let dashboardProjectionYears = 20;
 
   function renderOverview() {
-    const m = state.result.metrics;
-    const coc = m.cashOnCashReturn === null
-      ? 'n/a (fully geared)' : fmtPct(m.cashOnCashReturn, 1);
-    const wop = m.weeklyOutOfPocket;
+    const roll = state.ownedResult;   // purchased-only portfolio — what roll-ups show
+    const m = roll ? roll.metrics : null;
+    const coc = m && m.cashOnCashReturn === null
+      ? 'n/a (fully geared)' : m ? fmtPct(m.cashOnCashReturn, 1) : '—';
+    const wop = m ? m.weeklyOutOfPocket : null;
     const legacyCards = $('#overview-cards');
-    if (legacyCards) legacyCards.innerHTML =
-      card('Purchase price', fmtMoney(m.purchasePrice), `Duty ${fmtMoney(m.transferDuty)}${state.inputs.buyerType === 'foreign' ? ' incl. foreign surcharge' : ''}`) +
+    if (legacyCards) legacyCards.innerHTML = !m
+      ? '<div class="empty-note">No purchased properties yet — set a property\'s ownership status to Purchased in Inputs and it becomes the portfolio here.</div>'
+      : card('Purchase price', fmtMoney(m.purchasePrice), `Duty ${fmtMoney(m.transferDuty)}${state.inputs.buyerType === 'foreign' ? ' incl. foreign surcharge' : ''}`) +
       card('Gross yield', fmtPct(m.grossYield), `Net ${fmtPct(m.netYield)}`) +
       card('Weekly out-of-pocket', fmtMoney(Math.max(0, wop)) + (wop < 0 ? ' in' : ''), 'after tax, year 1', wop > 0 ? 'bad' : 'good') +
       card('Cash required upfront', fmtMoney(m.initialCashInvested), `Total funds ${fmtMoney(m.requiredFunds)}`) +
@@ -1986,7 +3246,7 @@
 
     renderOverviewProps();
 
-    const allRows = state.result.rows || [];
+    const allRows = (roll && roll.rows) || [];
     const rows = allRows.slice(0, Math.max(1, dashboardProjectionYears));
     const periodControl = $('#dashboard-period');
     if (periodControl && periodControl.value !== String(dashboardProjectionYears)) periodControl.value = String(dashboardProjectionYears);
@@ -2024,12 +3284,13 @@
     });
 
     // Sale waterfall-style breakdown: sale price less costs, tax and both loans.
-    const exitView = viewData();
-    const x = exitView.exit;
+    const exitView = viewData({ owned: true });
     const exitLabels = ['Sale price', 'Selling costs', 'CGT', 'IP loan payout', 'Equity loan payout', 'Cash received'];
-    const exitValues = [x.salePrice, -x.sellingCosts, -x.capitalGainsTax,
-      -x.ipLoanBalanceAtSale, -x.equityLoanBalanceAtSale, x.netSaleProceeds];
-    const allocationProps = (state.result.properties || []).map((p, i) => ({
+    const exitValues = exitView.ownedEmpty ? [] : [
+      exitView.exit.salePrice, -exitView.exit.sellingCosts, -exitView.exit.capitalGainsTax,
+      -exitView.exit.ipLoanBalanceAtSale, -exitView.exit.equityLoanBalanceAtSale,
+      exitView.exit.netSaleProceeds];
+    const allocationProps = ((roll && roll.properties) || []).map((p, i) => ({
       label: ipLabel(p, i),
       value: Number((p.metrics || {}).purchasePrice || 0),
     })).filter((p) => p.value > 0);
@@ -2094,7 +3355,13 @@
 
   // 3 / 5 / 7 % capital-growth bands — same inputs, growth swapped.
   function renderGrowthScenarios() {
-    const gs = E.growthScenarios(state.inputs);
+    const owned = E.ownedInputs(state.inputs);
+    if (!owned) {
+      $('#growth-table').innerHTML =
+        '<div class="empty-note">Growth bands cover purchased properties — mark a property as Purchased in Inputs to project it.</div>';
+      return;
+    }
+    const gs = E.growthScenarios(owned);
     $('#growth-table').innerHTML = `
       <thead><tr><th>Capital growth</th><th>10-yr equity</th><th>Exit proceeds</th>
       <th>Net position at sale</th><th>IRR</th></tr></thead><tbody>
@@ -2124,7 +3391,7 @@
         const irrTxt = m.irrApproximation === null ? 'n/a' : fmtPct(m.irrApproximation, 1);
         const score = p.score ? `${p.score.score} <span class="sub">${escapeHtml(p.score.band)}</span>` : '—';
         return `<tr>
-          <td>${escapeHtml(ipLabel(p, p.index))}</td>
+          <td>${escapeHtml(ipLabel(p, p.index))}${p.ownershipStatus && p.ownershipStatus !== 'purchased' ? ` <span class="status-chip ${p.ownershipStatus}">${STATUS_LABELS[p.ownershipStatus]}</span>` : ''}</td>
           <td>${fmtMoney(m.purchasePrice)}</td>
           <td>${fmtMoney((y1.weeklyRent || 0))}</td>
           <td>${fmtMoney(m.ipLoanAmount)} @ ${fmtPct(m.ipLvrActual, 0)}</td>
@@ -2309,7 +3576,14 @@
 
   function renderProjections() {
     fillViewSelect($('#proj-prop'));
-    const rows = viewData().rows;
+    const view = viewData({ owned: true });
+    if (view.ownedEmpty) {
+      $('#proj-table').innerHTML =
+        '<div class="empty-note">Portfolio projections cover purchased properties — mark one as Purchased in Inputs to project it here.</div>';
+      renderAnalyticsInsight('proj-insight', [], '');
+      return;
+    }
+    const rows = view.rows;
     const ioEnd = rows.find((r) => !r.inInterestOnlyPeriod);
 
     const first=rows[0], last=rows[rows.length-1];
@@ -2373,8 +3647,14 @@
   // ------------------------------------------------------------------
 
   function renderExit() {
-    const view = viewData();
+    const view = viewData({ owned: true });
     fillViewSelect($('#exit-prop'));
+    if (view.ownedEmpty) {
+      $('#exit-cards').innerHTML =
+        '<div class="empty-note">Exit outlook covers purchased properties — mark one as Purchased in Inputs to see its sale analysis.</div>';
+      renderAnalyticsInsight('exit-insight', [], '');
+      return;
+    }
     const x = view.exit;
     const profit = x.totalNetPosition;
 
@@ -3031,7 +4311,10 @@
     state.inputs = E.normalizeInputs(s.inputs);
     state.scenarioId = s.id;
     $('#scenario-name').value = s.name;
-    syncForm();
+    // setActiveTab rebuilds the property tab strip (syncForm alone doesn't),
+    // so a loaded scenario with a different property count shows all its tabs.
+    setActiveTab(Number.isInteger(state.inputTab)
+      && state.inputTab < state.inputs.properties.length ? state.inputTab : 0);
     recalc();
     saveDraft();
     await loadComps();
@@ -3078,21 +4361,80 @@
   // BA Workspace (visible only to role=ba)
   // ------------------------------------------------------------------
 
-  let wsCache = { clients: [], presentations: [] };
+  let wsCache = { clients: [], presentations: [], portfolios: [] };
+
+  async function fetchWorkspaceData(silent) {
+    // Each section fetches independently — a missing/failing endpoint must
+    // not blank the whole workspace (it renders whatever succeeded).
+    const results = await Promise.allSettled([
+      api('/api/clients'), api('/api/presentations'), api('/api/portfolios')]);
+    const next = {};
+    ['clients', 'presentations', 'portfolios'].forEach((name, i) => {
+      const r = results[i];
+      if (r.status === 'fulfilled') next[name] = r.value;
+      else if (!silent && r.reason.status !== 404) toast('Workspace ' + name + ': ' + r.reason.message);
+    });
+    Object.assign(wsCache, next);
+    return JSON.stringify(next);
+  }
 
   async function refreshWorkspace() {
     if (!state.currentUser || state.currentUser.role !== 'ba') return;
-    try {
-      const [clients, presentations] = await Promise.all([
-        api('/api/clients'), api('/api/presentations')]);
-      wsCache = { clients, presentations };
-      renderWorkspace();
-      refreshBranding();
-    } catch (err) { toast('Workspace: ' + err.message); }
+    await fetchWorkspaceData(false);
+    renderWorkspace();
+    api('/api/presentations/alerts').then((d) => {
+      const cb = $('#ws-alerts');
+      if (cb) cb.checked = !!d.enabled;
+    }).catch(() => {});
+    refreshBranding();
   }
 
+  $('#ws-alerts').addEventListener('change', async (ev) => {
+    try {
+      const d = await api('/api/presentations/alerts', {
+        method: 'POST', body: { enabled: ev.target.checked },
+      });
+      $('#ws-logo-msg').textContent = d.enabled
+        ? 'Client activity will be emailed to you'
+        : 'Client activity emails off';
+    } catch (err) {
+      ev.target.checked = !ev.target.checked;
+      toast('Error: ' + err.message);
+    }
+  });
+
   function renderWorkspace() {
-    const { clients, presentations } = wsCache;
+    renderWorkspaceForms();
+    renderWorkspaceTables();
+  }
+
+  // Selects and the tick-list live here — a re-render resets user choices,
+  // so the auto-refresh poll must never touch this part.
+  function renderWorkspaceForms() {
+    const { clients } = wsCache;
+    const scenarios = state.scenarioList || [];
+    $('#ws-scenario').innerHTML = scenarios.length
+      ? scenarios.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')
+      : '<option value="">— save a scenario first —</option>';
+    const clientOpts = clients.length
+      ? clients.map((c) => `<option value="${c.email}">${escapeHtml(c.name)} — ${escapeHtml(c.email)}</option>`).join('')
+      : '<option value="">— add a client first —</option>';
+    $('#ws-client').innerHTML = clientOpts;
+    $('#ws-pf-client').innerHTML = clientOpts;
+
+    $('#ws-pf-items').innerHTML = scenarios.length
+      ? scenarios.map((s) => `
+        <label class="ws-pf-item">
+          <input type="checkbox" data-pf-scenario="${s.id}">
+          <span class="ws-pf-item-name">${escapeHtml(s.name)}</span>
+          <input type="text" data-pf-label="${s.id}" placeholder="label — defaults to scenario name" maxlength="120">
+        </label>`).join('')
+      : '<div class="source-note">Save a scenario first — ticked scenarios become the portfolio properties.</div>';
+    updatePfCount();
+  }
+
+  function renderWorkspaceTables() {
+    const { clients, presentations, portfolios } = wsCache;
 
     $('#ws-clients').innerHTML = `
       <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Proposals</th><th>Status</th></tr></thead><tbody>
@@ -3106,14 +4448,6 @@
         </tr>`).join('') || '<tr><td colspan="5">No clients yet — add one above.</td></tr>'}
       </tbody>`;
 
-    const scenarios = state.scenarioList || [];
-    $('#ws-scenario').innerHTML = scenarios.length
-      ? scenarios.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')
-      : '<option value="">— save a scenario first —</option>';
-    $('#ws-client').innerHTML = clients.length
-      ? clients.map((c) => `<option value="${c.email}" data-name="${escapeHtml(c.name)}">${escapeHtml(c.name)} — ${escapeHtml(c.email)}</option>`).join('')
-      : '<option value="">— add a client first —</option>';
-
     $('#ws-presentations').innerHTML = `
       <thead><tr><th>Title</th><th>Client</th><th>Status</th><th>Last activity</th><th>Comments</th><th></th></tr></thead><tbody>
       ${presentations.map((p) => `
@@ -3125,11 +4459,57 @@
           <td>${p.commentCount}</td>
           <td class="scenario-row">
             <button data-ws-activity="${p.id}">Activity</button>
+            <button data-ws-report="${p.id}" data-ws-report-sid="${p.scenarioId || ''}" ${p.scenarioId ? '' : 'disabled'}>Report</button>
+            <button data-ws-tax="${p.id}" data-ws-tax-sid="${p.scenarioId || ''}" ${p.scenarioId ? '' : 'disabled'}>Tax pack</button>
+            <button data-ws-xls="${p.id}" data-ws-xls-sid="${p.scenarioId || ''}" ${p.scenarioId ? '' : 'disabled'}>Excel</button>
             <button data-ws-rotate="${p.id}" ${p.status !== 'active' ? 'disabled' : ''}>New link</button>
             <button data-ws-revoke="${p.id}" ${p.status !== 'active' ? 'disabled' : ''} class="danger">Revoke</button>
           </td>
         </tr>`).join('') || '<tr><td colspan="6">Nothing shared yet — create a link above.</td></tr>'}
       </tbody>`;
+
+    $('#ws-portfolios').innerHTML = `
+      <thead><tr><th>Portfolio</th><th>Client</th><th>Properties</th><th>Decisions</th><th>Comments</th><th>Status</th><th>Last activity</th><th></th></tr></thead><tbody>
+      ${portfolios.map((p) => `
+        <tr>
+          <td>${escapeHtml(p.title || 'Untitled portfolio')}</td>
+          <td>${escapeHtml(p.clientName)}</td>
+          <td>${p.itemCount}</td>
+          <td>${p.approvedCount} approved · ${p.changesCount} changes · ${p.pendingCount} open</td>
+          <td>${p.commentCount}</td>
+          <td>${p.status}</td>
+          <td>${(p.lastActivity || p.updatedAt || '').slice(0, 16).replace('T', ' ')}</td>
+          <td class="scenario-row">
+            <button data-ws-pf-activity="${p.id}">Activity</button>
+            <button data-ws-pf-rotate="${p.id}" ${p.status !== 'active' ? 'disabled' : ''}>New link</button>
+            <button data-ws-pf-revoke="${p.id}" ${p.status !== 'active' ? 'disabled' : ''} class="danger">Revoke</button>
+            <button data-ws-pf-delete="${p.id}" class="danger">Delete</button>
+          </td>
+        </tr>`).join('') || '<tr><td colspan="8">No portfolios yet — tick a few properties above to share them as one link.</td></tr>'}
+      </tbody>`;
+  }
+
+  // While a BA sits in the workspace, client activity (comments, approvals,
+  // opens) shows up on its own — no reload. Tables only: re-rendering the
+  // forms would wipe mid-entry state (ticked properties, chosen client).
+  // Silent and change-gated so an offline server doesn't toast every 20s.
+  let wsPollSerial = '';
+  setInterval(async () => {
+    if (!state.currentUser || state.currentUser.role !== 'ba') return;
+    if (!document.querySelector('#section-workspace.active')) return;
+    if (document.visibilityState !== 'visible') return;
+    try {
+      const serial = await fetchWorkspaceData(true);
+      if (serial === wsPollSerial) return;
+      wsPollSerial = serial;
+      renderWorkspaceTables();
+    } catch (e) { /* poll is best-effort */ }
+  }, 20000);
+
+  function updatePfCount() {
+    const n = document.querySelectorAll('#ws-pf-items input[data-pf-scenario]:checked').length;
+    const el = $('#ws-pf-count');
+    if (el) el.textContent = n ? `${n} propert${n === 1 ? 'y' : 'ies'} selected` : '';
   }
 
   // Comparable rentals + buyer risk checklist (Area Report).
@@ -3269,6 +4649,162 @@
     } catch (err) { toast('Error: ' + err.message); }
   });
 
+  // Full report pack — engine outputs posted to the server, which adds
+  // comps, rentals, suburb data, overlays and branding and renders a PDF.
+  function buildReportPayload(result, inputs) {
+    const horizon = Number(inputs.projectionYears) || 20;
+    const rows = result.rows.slice(0, horizon).map((row) => ({
+      year: row.year,
+      calendarYear: row.calendarYear,
+      grossRent: row.grossRent,
+      effectiveRent: row.effectiveRent,
+      ipInterest: row.ipInterest,
+      equityLoanInterest: row.equityLoanInterest,
+      ipPrincipalRepayment: row.ipPrincipalRepayment,
+      equityLoanPrincipalRepayment: row.equityLoanPrincipalRepayment,
+      operatingExpenses: row.operatingExpenses,
+      otherDeductibleClaims: row.otherDeductibleClaims,
+      capitalWorksDepreciation: row.capitalWorksDepreciation,
+      plantEquipmentDepreciation: row.plantEquipmentDepreciation,
+      taxablePropertyResult: row.taxablePropertyResult,
+      preTaxCashFlow: row.preTaxCashFlow,
+      taxRefundOrCost: row.taxRefundOrCost,
+      afterTaxCashFlow: row.afterTaxCashFlow,
+      cumulativeAfterTaxCashFlow: row.cumulativeAfterTaxCashFlow,
+    }));
+    const year1 = rows[0] || {};
+    const prop = inputs.properties[0] || {};
+    const propSections = (result.properties || []).map((p) => {
+      const raw = inputs.properties[p.index] || {};
+      const row0 = (p.rows && p.rows[0]) || {};
+      return {
+        label: raw.label || p.label,
+        address: raw.address || '',
+        metrics: { purchasePrice: p.metrics.purchasePrice,
+                   grossYield: p.metrics.grossYield, netYield: p.metrics.netYield,
+                   year1AfterTaxCashFlow: p.metrics.year1AfterTaxCashFlow,
+                   weeklyOutOfPocket: p.metrics.weeklyOutOfPocket,
+                   tenYearEquity: p.metrics.tenYearEquity,
+                   irrApproximation: p.metrics.irrApproximation },
+        year1: { grossRent: row0.grossRent, vacancyLoss: row0.vacancyLoss,
+                 effectiveRent: row0.effectiveRent, managementFees: row0.managementFees,
+                 operatingExpenses: row0.operatingExpenses, landTax: row0.landTax,
+                 ipInterest: row0.ipInterest, equityLoanInterest: row0.equityLoanInterest,
+                 ipPrincipalRepayment: row0.ipPrincipalRepayment,
+                 equityLoanPrincipalRepayment: row0.equityLoanPrincipalRepayment,
+                 capitalWorksDepreciation: row0.capitalWorksDepreciation,
+                 plantEquipmentDepreciation: row0.plantEquipmentDepreciation,
+                 otherDeductibleClaims: row0.otherDeductibleClaims,
+                 taxablePropertyResult: row0.taxablePropertyResult,
+                 taxRefundOrCost: row0.taxRefundOrCost,
+                 afterTaxCashFlow: row0.afterTaxCashFlow,
+                 preTaxCashFlow: row0.preTaxCashFlow },
+        exit: { saleYear: p.exit.saleYear, calendarSaleYear: p.exit.calendarSaleYear,
+                salePrice: p.exit.salePrice, capitalGainsTax: p.exit.capitalGainsTax,
+                netSaleProceeds: p.exit.netSaleProceeds,
+                totalNetPosition: p.exit.totalNetPosition },
+      };
+    });
+    return {
+      accent: getComputedStyle(document.documentElement).getPropertyValue('--pri').trim() || '#6366f1',
+      metrics: { purchasePrice: result.metrics.purchasePrice,
+                 grossYield: result.metrics.grossYield, netYield: result.metrics.netYield,
+                 irrApproximation: result.metrics.irrApproximation,
+                 tenYearEquity: result.metrics.tenYearEquity,
+                 netSaleProceeds: result.metrics.netSaleProceeds },
+      funding: E.fundingStructure(inputs),
+      loan: { rate: inputs.ipInterestRate },
+      year1,
+      taxSplit: E.ownerTaxSplit(inputs, year1.taxablePropertyResult || 0, 1),
+      years: rows,
+      horizon: rows.length,
+      propertySections: propSections,
+      exit: result.exit,
+      checks: E.riskChecklist(inputs, null).checks,
+      replacement: { landValue: inputs.landValue, capitalWorksBase: inputs.capitalWorksBase },
+      preTaxSeries: rows.map((row) => row.preTaxCashFlow),
+      cashSeries: rows.map((row) => row.afterTaxCashFlow),
+      subject: { price: prop.purchasePrice, weeklyRent: prop.weeklyRent,
+                 landValue: prop.landValue, bedrooms: prop.bedrooms,
+                 address: prop.address },
+    };
+  }
+
+  async function dealCheckForReport(inputs, result) {
+    const meta = ((inputs.properties || [])[0] || {}).addressMeta || {};
+    const lat = numOrNull(meta.lat), lon = numOrNull(meta.lon);
+    let census = null;
+    if (lat !== null && lon !== null) {
+      try { census = await fetchDealCheck(lat, lon); } catch (e) { census = null; }
+    }
+    const suburbRow = (state.suburbs || []).find((s) => s.id === Number(inputs.suburbId)) || null;
+    const suburb = await dcPriceBenchmark(meta, suburbRow);
+    return buildDealCheckBundle(census, inputs, result, suburb, 0);
+  }
+
+    async function downloadScenarioReport(sid, taxPack = false) {
+    if (!sid) { toast('This share has no linked scenario'); return; }
+    try {
+      const d = await api('/api/scenarios/' + sid);
+      const suburb = (state.suburbs || []).find((s) => s.id === d.suburbId) || null;
+      const result = E.calculateAll(d.inputs, { suburb });
+      // result.inputs is the normalized copy — fundingStructure and the tax
+      // split need defaults applied (raw saved inputs miss ipLvr etc.).
+      const inputs = result.inputs;
+      const payload = buildReportPayload(result, inputs);
+      if (taxPack) payload.taxPack = true;
+      else payload.dealCheck = await dealCheckForReport(inputs, result);
+      const resp = await fetch(`/api/scenarios/${sid}/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
+        body: JSON.stringify(payload),
+      });
+      const ct = resp.headers.get('Content-Type') || '';
+      if (ct.includes('pdf')) {
+        const blob = await resp.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = ((d.name || 'report').replace(/[^\w -]/g, '') || 'report') + '.pdf';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        toast('Report downloaded');
+      } else {
+        // WeasyPrint missing server-side — open the print HTML instead.
+        const html = await resp.text();
+        const w = window.open('', '_blank');
+        w.document.write(html);
+        w.document.close();
+      }
+    } catch (err) { toast('Error: ' + err.message); }
+  }
+
+  async function downloadScenarioExcel(sid) {
+    if (!sid) { toast('This share has no linked scenario'); return; }
+    try {
+      const d = await api('/api/scenarios/' + sid);
+      const suburb = (state.suburbs || []).find((s) => s.id === d.suburbId) || null;
+      const result = E.calculateAll(d.inputs, { suburb });
+      const payload = buildReportPayload(result, result.inputs);
+      const resp = await fetch(`/api/scenarios/${sid}/excel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
+        body: JSON.stringify(payload),
+      });
+      const ct = resp.headers.get('Content-Type') || '';
+      if (!resp.ok || !ct.includes('spreadsheet')) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.error || 'Excel export failed');
+      }
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = ((d.name || 'report').replace(/[^\w -]/g, '') || 'report') + '.xlsx';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('Excel downloaded');
+    } catch (err) { toast('Error: ' + err.message); }
+  }
+
   $('#ws-presentations').addEventListener('click', async (ev) => {
     const btn = ev.target.closest('button');
     if (!btn) return;
@@ -3282,6 +4818,12 @@
           <span class="k">${(e.created_at || '').slice(0, 16).replace('T', ' ')} · ${who(e)} · ${e.type}</span>
           <span class="v">${escapeHtml(e.body || '')}</span>`).join('')
           || '<span class="k">no activity yet</span><span class="v"></span>';
+      } else if (btn.dataset.wsReport) {
+        await downloadScenarioReport(btn.dataset.wsReportSid);
+      } else if (btn.dataset.wsTax) {
+        await downloadScenarioReport(btn.dataset.wsTaxSid, true);
+      } else if (btn.dataset.wsXls) {
+        await downloadScenarioExcel(btn.dataset.wsXlsSid);
       } else if (btn.dataset.wsRotate) {
         if (!confirm('Generate a new link? The old one stops working.')) return;
         const d = await api(`/api/presentations/${btn.dataset.wsRotate}/rotate`, { method: 'POST', body: '{}' });
@@ -3292,6 +4834,93 @@
         await api(`/api/presentations/${btn.dataset.wsRevoke}/revoke`, { method: 'POST', body: '{}' });
         await refreshWorkspace();
         toast('Link revoked');
+      }
+    } catch (err) { toast('Error: ' + err.message); }
+  });
+
+  // --- Client portfolios ---
+
+  let lastPfShare = { id: null, token: null };
+
+  function showPfShareLink(pfid, token) {
+    lastPfShare = { id: pfid, token };
+    const url = location.origin + '/p/' + token;
+    $('#ws-pf-new-link').classList.remove('hidden');
+    $('#ws-pf-link').value = url;
+    const client = wsCache.clients.find((c) => c.email === $('#ws-pf-client').value);
+    if (client) $('#ws-pf-email').value = client.email;
+    if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+    toast('Portfolio link created and copied');
+  }
+
+  $('#ws-pf-email-send').addEventListener('click', async () => {
+    if (!lastPfShare.id || !lastPfShare.token) return;
+    try {
+      const d = await api(`/api/portfolios/${lastPfShare.id}/email`, {
+        method: 'POST',
+        body: { shareToken: lastPfShare.token, email: $('#ws-pf-email').value.trim() },
+      });
+      $('#ws-pf-email-msg').textContent = d.sent
+        ? `Sent to ${d.emailedTo}`
+        : 'SMTP not configured on this server — link logged, copy it above instead';
+    } catch (err) { toast('Error: ' + err.message); }
+  });
+
+  $('#ws-pf-items').addEventListener('change', updatePfCount);
+
+  $('#ws-pf-create').addEventListener('click', async () => {
+    const clientEmail = $('#ws-pf-client').value;
+    const ticked = [...document.querySelectorAll('#ws-pf-items input[data-pf-scenario]:checked')];
+    if (!clientEmail) { toast('Add a client first'); return; }
+    if (!ticked.length) { toast('Tick at least one property to share'); return; }
+    const items = ticked.map((cb) => {
+      const label = document.querySelector(`#ws-pf-items input[data-pf-label="${cb.dataset.pfScenario}"]`).value.trim();
+      return label ? { scenarioId: Number(cb.dataset.pfScenario), label } : { scenarioId: Number(cb.dataset.pfScenario) };
+    });
+    try {
+      const d = await api('/api/portfolios', {
+        method: 'POST',
+        body: {
+          clientEmail,
+          clientName: (wsCache.clients.find((c) => c.email === clientEmail) || {}).name || '',
+          title: $('#ws-pf-title').value.trim() || undefined,
+          expiresInDays: Number($('#ws-pf-expiry').value || 30),
+          items,
+        },
+      });
+      showPfShareLink(d.id, d.shareToken);
+      await refreshWorkspace();
+    } catch (err) { toast('Error: ' + err.message); }
+  });
+
+  $('#ws-portfolios').addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('button');
+    if (!btn) return;
+    try {
+      if (btn.dataset.wsPfActivity) {
+        const d = await api('/api/portfolios/' + btn.dataset.wsPfActivity);
+        $('#ws-activity-box').classList.remove('hidden');
+        $('#ws-activity-title').textContent = 'Activity — ' + (d.title || 'portfolio');
+        const who = (e) => e.email === state.currentUser.email ? 'you' : (e.display_name || e.email || '').split('@')[0];
+        $('#ws-events').innerHTML = d.events.map((e) => `
+          <span class="k">${(e.created_at || '').slice(0, 16).replace('T', ' ')} · ${who(e)} · ${e.type}${e.item_label ? ' · ' + escapeHtml(e.item_label) : ''}</span>
+          <span class="v">${escapeHtml(e.body || '')}</span>`).join('')
+          || '<span class="k">no activity yet</span><span class="v"></span>';
+      } else if (btn.dataset.wsPfRotate) {
+        if (!confirm('Generate a new portfolio link? The old one stops working.')) return;
+        const d = await api(`/api/portfolios/${btn.dataset.wsPfRotate}/rotate`, { method: 'POST', body: '{}' });
+        showPfShareLink(d.id, d.shareToken);
+        await refreshWorkspace();
+      } else if (btn.dataset.wsPfRevoke) {
+        if (!confirm('Revoke this portfolio? Every property in it stops being shared immediately.')) return;
+        await api(`/api/portfolios/${btn.dataset.wsPfRevoke}/revoke`, { method: 'POST', body: '{}' });
+        await refreshWorkspace();
+        toast('Portfolio revoked');
+      } else if (btn.dataset.wsPfDelete) {
+        if (!confirm('Delete this portfolio and its shared properties? This cannot be undone.')) return;
+        await api(`/api/portfolios/${btn.dataset.wsPfDelete}`, { method: 'DELETE' });
+        await refreshWorkspace();
+        toast('Portfolio deleted');
       }
     } catch (err) { toast('Error: ' + err.message); }
   });
@@ -3324,7 +4953,49 @@
     } catch (err) { toast('Actuals: ' + err.message); }
   }
 
+  function renderActualsCompare() {
+    const cardsHost = $('#act-compare');
+    if (!cardsHost) return;
+    if (!actualsCache.length) { cardsHost.innerHTML = ''; return; }
+    let actRent = 0, projRent = 0, actExp = 0, projExp = 0;
+    const labels = [], actualRent = [], projectedRent = [];
+    actualsCache.forEach((r) => {
+      const p = state.result.properties[r.propertyIndex];
+      const proj = p && p.rows.find((row) => row.calendarYear === Number(r.periodStart.slice(0, 4)));
+      const days = Math.max(1, Math.round((new Date(r.periodEnd) - new Date(r.periodStart)) / 86400000) + 1);
+      const pRent = proj ? proj.grossRent / 365 * days : null;
+      const pExp = proj ? proj.operatingExpenses / 365 * days : null;
+      actRent += r.rentReceived || 0;
+      projRent += pRent || 0;
+      actExp += r.expenses || 0;
+      projExp += pExp || 0;
+      labels.push(r.periodStart.slice(0, 7));
+      actualRent.push(r.rentReceived || 0);
+      projectedRent.push(pRent || 0);
+    });
+    const varPct = projRent ? ((actRent - projRent) / projRent * 100).toFixed(1) + '%' : '—';
+    cardsHost.innerHTML = [
+      ['Rent collected', fmtMoney(actRent), 'vs ' + fmtMoney(projRent) + ' projected', 'blue'],
+      ['Rent variance', varPct, actRent >= projRent ? 'ahead of projection' : 'behind projection', actRent >= projRent ? 'good' : 'warn'],
+      ['Expenses paid', fmtMoney(actExp), 'vs ' + fmtMoney(projExp) + ' projected', 'amber'],
+    ].map((x) => '<div class="portfolio-kpi ' + x[3] + '"><div class="portfolio-kpi-label">' + escapeHtml(x[0]) + '</div>' +
+      '<div class="portfolio-kpi-value">' + escapeHtml(x[1]) + '</div>' +
+      '<div class="portfolio-kpi-note">' + escapeHtml(x[2]) + '</div></div>').join('');
+    drawChart('act-chart', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Actual rent', data: actualRent, backgroundColor: COLORS.pri, borderRadius: 4 },
+          { label: 'Projected rent', data: projectedRent, backgroundColor: 'rgba(100,116,139,.5)', borderRadius: 4 },
+        ],
+      },
+      options: baseOpts((v) => fmtMoney(v)),
+    });
+  }
+
   function renderActualsTable() {
+    renderActualsCompare();
     if (!actualsCache.length) {
       $('#actuals-table').innerHTML = '<tr><td>No periods recorded yet — save one above.</td></tr>';
       return;
@@ -3400,12 +5071,25 @@
   // BA branding + plan
   // ------------------------------------------------------------------
 
+  // The BA logo follows the brand everywhere — including the browser tab.
+  function setFavicon(url) {
+    if (!url) return;
+    let link = document.querySelector('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = url;
+  }
+
   async function refreshBranding() {
     try {
       const [b, me] = await Promise.all([api('/api/branding'), api('/api/auth/me')]);
       $('#ws-brand-name').value = b.businessName || '';
       $('#ws-brand-color').value = b.accentColor || '#6366f1';
       $('#ws-brand-tagline').value = b.tagline || '';
+      setFavicon(b.logoUrl);
       $('#ws-plan').textContent = me.plan || 'trial';
       $('#ws-upgrade').classList.toggle('hidden', me.plan === 'pro');
     } catch (err) { /* branding is optional UI — silent */ }
@@ -3448,6 +5132,7 @@
       });
       const body = await resp.json();
       if (!body.ok) throw new Error(body.error || 'upload failed');
+      setFavicon((body.data || {}).logoUrl);
       $('#ws-logo-msg').textContent = 'Logo uploaded — clients see it on their portal';
       toast('Logo uploaded');
     } catch (err) {
@@ -3748,6 +5433,9 @@
     state.scenarioId = null;
     state.compareIds = [];
     state.compareData = [];
+    // Same-page account switches keep the previous session's tab — it may
+    // point past this draft's properties and crash syncForm.
+    state.inputTab = 0;
     $('#scenario-name').value = state.inputs.scenarioName;
     $('#scenario-select').value = '';
     syncForm();
@@ -3784,6 +5472,8 @@
         body: JSON.stringify({
           email, password,
           role: document.querySelector('#auth-ba') && $('#auth-ba').checked ? 'ba' : undefined,
+          goal: endpoint === 'register' ? ($('#auth-goal') || {}).value || undefined : undefined,
+          ownedCount: endpoint === 'register' ? ($('#auth-owned') || {}).value || undefined : undefined,
         }),
       });
       const body = await resp.json().catch(() => ({ ok: false, error: 'bad response' }));
@@ -3792,9 +5482,10 @@
       setCurrentUser(body.data);
       hideLogin();
       await initUserSession();
-      loadDashboard().then(() => startTour());
+      landAfterLogin();
       toast(`Signed in as ${body.data.displayName}`);
     } catch (err) {
+      console.error('login failed', err);
       showLogin(err.message);
     }
   }
@@ -3826,6 +5517,60 @@
       if (ev.key === 'Enter') doAuth('login');
     });
 
+    // Password reset (forgot → emailed link /reset?token=… → set new password)
+    const authMsg = (sel, text) => {
+      const el = $(sel);
+      el.textContent = text;
+      el.classList.toggle('hidden', !text);
+    };
+    $('#link-forgot').addEventListener('click', () => {
+      $('#auth-forgot-box').classList.remove('hidden');
+      $('#auth-reset-box').classList.add('hidden');
+      authMsg('#forgot-msg', '');
+    });
+    $('#btn-forgot-cancel').addEventListener('click', () => {
+      $('#auth-forgot-box').classList.add('hidden');
+      authMsg('#forgot-msg', '');
+    });
+    $('#btn-forgot-send').addEventListener('click', async () => {
+      const email = $('#auth-forgot-email').value.trim();
+      if (!email) { authMsg('#forgot-msg', 'Enter your account email first.'); return; }
+      try {
+        const d = await api('/api/auth/forgot', { method: 'POST', body: { email } });
+        authMsg('#forgot-msg', d.devResetUrl
+          ? 'No email is configured on this machine — open this reset link: ' + d.devResetUrl
+          : 'Reset link sent — check your email (valid 30 minutes).');
+      } catch (err) { authMsg('#forgot-msg', err.message); }
+    });
+    $('#btn-reset-confirm').addEventListener('click', async () => {
+      const token = new URLSearchParams(location.search).get('token') || '';
+      const password = $('#auth-new-password').value;
+      try {
+        await api('/api/auth/reset', {
+          method: 'POST', body: { token, password },
+        });
+        $('#auth-reset-box').classList.add('hidden');
+        history.replaceState(null, '', '/');
+        authMsg('#auth-error', '');
+        $('#auth-password').value = '';
+        toast('Password updated — sign in with your new password');
+      } catch (err) { authMsg('#reset-msg', err.message); }
+    });
+    // Arriving from the emailed link: /reset?token=…
+    if (location.pathname === '/reset') {
+      const token = new URLSearchParams(location.search).get('token');
+      if (token) {
+        $('#auth-forgot-box').classList.add('hidden');
+        $('#auth-reset-box').classList.remove('hidden');
+        if (getToken()) {
+          // Signed in already — still show the reset panel and skip the
+          // normal boot path (it would hideLogin() right after this).
+          showLogin('Choose a new password — you can keep working after signing back in');
+          return;
+        }
+      }
+    }
+
     if (!getToken()) {
       // Client sessions live in the portal, not the analyzer.
       if (localStorage.getItem('pa_portal_token')) {
@@ -3841,7 +5586,7 @@
         setCurrentUser(me);
         hideLogin();
         await initUserSession();
-        loadDashboard().then(() => startTour());
+        landAfterLogin();
       })
       .catch(() => { /* 401 path already surfaced the login screen */ });
   }

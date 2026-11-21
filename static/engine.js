@@ -234,6 +234,7 @@
     label: '',                    // UI shows "Investment property N" when blank
     address: '',
     addressMeta: null,    // {domainId, unit, street, suburb, postcode, state} from a Domain autocomplete pick
+    ownershipStatus: 'considering',  // considering | under_offer | purchased — only 'purchased' counts in portfolio roll-ups
     bedrooms: 3,          // used by the rentVsMedian score factor
     purchaseYear: 2026,
     saleYear: 20,
@@ -1176,6 +1177,33 @@
   // positive -> tax cost.
   function taxOnPropertyResult(inputs, taxablePropertyResult, year) {
     return -taxablePropertyResult * ownerBlendedRate(inputs, year - 1);
+  }
+
+  // The PIA-style investor/partner breakdown: each owner's share of the
+  // property result taxed at their OWN marginal rate. Sums exactly to
+  // taxOnPropertyResult (the blended rate is the share-weighted average).
+  function ownerTaxSplit(inputs, taxablePropertyResult, year) {
+    const y = Math.max(0, num(year, 1) - 1);
+    const growth = Math.pow(1 + num(inputs.otherTaxableIncomeGrowthRate, 0), y);
+    const joint = inputs.ownershipType === 'joint_50_50';
+    const share = joint ? 0.5 : 1;
+    const s1 = marginalRate(inputs.owner1TaxableIncome * growth, inputs.taxYear);
+    const owner1 = -taxablePropertyResult * share * s1.combinedMarginalRate;
+    let owner2 = null;
+    let s2 = null;
+    if (joint) {
+      s2 = marginalRate(inputs.owner2TaxableIncome * growth, inputs.taxYear);
+      owner2 = -taxablePropertyResult * share * s2.combinedMarginalRate;
+    }
+    return {
+      ownership: joint ? 'joint_50_50' : 'sole',
+      share,
+      owner1, owner2,
+      total: owner2 === null ? owner1 : owner1 + owner2,
+      rate1: s1.combinedMarginalRate, rate2: s2 ? s2.combinedMarginalRate : null,
+      bracket1: s1.bracketLabel, bracket2: s2 ? s2.bracketLabel : null,
+      income1: inputs.owner1TaxableIncome, income2: inputs.owner2TaxableIncome,
+    };
   }
 
   // Single-property year: land tax on this property + other AU land,
@@ -2191,6 +2219,7 @@
     const properties = props.map((p, i) => ({
       index: i,
       label: p.label,
+      ownershipStatus: p.ownershipStatus,
       upfront: upfronts[i],
       rows: projection.perProperty[i].rows,
       totals: projection.perProperty[i].totals,
@@ -2243,9 +2272,163 @@
     });
   }
 
+  // Inputs reduced to purchased properties only — the portfolio roll-ups
+  // (dashboard totals, mix chart, projections, exit) compute on this view.
+  // null when nothing is purchased: callers must show an empty state rather
+  // than let calculateAll pad a phantom default property (engine.js normalize).
+  function ownedInputs(rawInputs) {
+    const inputs = normalizeInputs(rawInputs);
+    const owned = inputs.properties.filter((p) => p.ownershipStatus === 'purchased');
+    if (!owned.length) return null;
+    const out = JSON.parse(JSON.stringify(inputs));
+    out.properties = owned;
+    return out;
+  }
+
   // Buyer due-diligence prompts derived from inputs + suburb data.
   // status: 'ok' | 'warn' | 'unknown' — unknowns are things the app has
   // no data for and MUST be verified manually before purchase.
+  // Deal-level verdicts (Deal Check page phase 2): the property's own
+  // numbers scored against the linked suburb row — price, yield, cash flow,
+  // vacancy, rent positioning, growth. Pure; census verdicts live in the
+  // server's census.py and the page blends both halves. weeklyOutOfPocket is
+  // positive when you are paying. Band scores: linear between [x, score]
+  // points, clamped; 100 is always best for the deal.
+  function bandScore(v, points) {
+    if (!Number.isFinite(v)) return null;
+    if (v <= points[0][0]) return points[0][1];
+    for (let i = 1; i < points.length; i++) {
+      if (v <= points[i][0]) {
+        const x0 = points[i - 1][0], s0 = points[i - 1][1];
+        const x1 = points[i][0], s1 = points[i][1];
+        return x1 > x0 ? s0 + (s1 - s0) * (v - x0) / (x1 - x0) : s1;
+      }
+    }
+    return points[points.length - 1][1];
+  }
+
+  function dealStatus(score) {
+    return score >= 65 ? 'strong' : score >= 40 ? 'ok' : 'watch';
+  }
+
+  function rentMedianFor(suburb, bedrooms) {
+    if (!suburb) return null;
+    const b = Number(bedrooms) || 0;
+    const key = b <= 2 ? 'medianRent2Bed' : (b === 3 ? 'medianRent3Bed' : 'medianRent4Bed');
+    const v = Number(suburb[key]);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  }
+
+  function dealVerdicts(rawInputs, metrics, suburb) {
+    const inputs = singleView(normalizeInputs(rawInputs));
+    const price = num(inputs.purchasePrice, 0);
+    const rent = num(inputs.weeklyRent, 0);
+    const beds = num(inputs.bedrooms, 0);
+    const out = [];
+    const push = (key, question, headlines, score, chips) => {
+      const s = score == null ? null : Math.round(Math.max(0, Math.min(100, score)));
+      out.push({ key, question, group: 'deal',
+        status: s == null ? 'nodata' : dealStatus(s), score: s,
+        headline: s == null ? headlines.nodata : headlines[dealStatus(s)],
+        metrics: chips.filter(Boolean) });
+    };
+    const chip = (label, value, unit, dp, benchmark, opts) => ({
+      label, value: Number.isFinite(value) ? value : null, unit, dp: dp != null ? dp : 0,
+      benchmark: Number.isFinite(benchmark) ? benchmark : null, percentile: null,
+      better: (opts && opts.better) || null, note: (opts && opts.note) || null,
+    });
+
+    // 1. Price vs suburb median. suburb.medianPrice may come from the user's
+    // suburb table or a Valuer-General fallback (medianPriceSource set).
+    const medPrice = suburb ? num(suburb.medianPrice, 0) : 0;
+    const medPriceNote = 'All-dwelling median — adjust for size and condition'
+      + (suburb && suburb.medianPriceSource ? ' · ' + suburb.medianPriceSource : '');
+    const priceRatio = price > 0 && medPrice > 0 ? price / medPrice : null;
+    push('price_vs_market', 'Are you paying a fair price for this suburb?', {
+      nodata: 'Link a suburb (or set a located VIC address) to check the price.',
+      strong: 'Priced at or below the suburb median — fair value.',
+      ok: 'Slightly above the suburb median — pay up only for verified quality.',
+      watch: 'Well above the suburb median — be clear what the premium buys.',
+    }, priceRatio == null ? null : bandScore(priceRatio,
+      [[0.7, 100], [0.9, 85], [1.0, 68], [1.1, 50], [1.25, 30], [1.4, 12]]),
+    [chip('Purchase price', price, '$', 0),
+     chip('Suburb median (all dwellings)', medPrice || null, '$', 0, null,
+          { note: medPriceNote }),
+     priceRatio == null ? null : chip('Price / median', priceRatio, '×', 2)]);
+
+    // 2. Gross yield.
+    const grossYield = metrics ? num(metrics.grossYield, NaN) : NaN;
+    const yPct = Number.isFinite(grossYield) ? grossYield * 100 : null;
+    push('gross_yield', 'Does the rent justify the price?', {
+      nodata: 'Enter price and rent to score the yield.',
+      strong: 'Healthy gross yield for the price paid.',
+      ok: 'Middle-of-the-road yield — rent roughly services the price.',
+      watch: 'Thin yield — the rent barely services the price.',
+    }, yPct == null ? null : bandScore(yPct,
+      [[3, 10], [3.8, 40], [4.4, 65], [5.2, 85], [6, 100]]),
+    [chip('Gross yield', yPct, '%', 2, null,
+          { note: 'Rent × 52 ÷ price, before costs' }),
+     chip('Weekly rent', rent, '$', 0)]);
+
+    // 3. Cash flow.
+    const wop = metrics ? num(metrics.weeklyOutOfPocket, NaN) : NaN;
+    push('cash_flow', 'What does it cost you to hold?', {
+      nodata: 'Complete the inputs to score the holding cost.',
+      strong: 'Pays for itself — little or nothing out of pocket.',
+      ok: 'Modest weekly contribution required.',
+      watch: 'Heavy weekly contribution — you, not the tenant, carry it.',
+    }, Number.isFinite(wop) ? bandScore(wop,
+      [[-30, 100], [0, 82], [15, 68], [40, 42], [80, 12], [150, 0]]) : null,
+    [chip('Weekly after-tax position', wop, '$', 0, null,
+          { note: 'Negative = in pocket' }),
+     chip('Year-1 after-tax cash flow',
+          metrics ? num(metrics.year1AfterTaxCashFlow, NaN) : NaN, '$', 0)]);
+
+    // 4. Vacancy.
+    const vacancy = suburb ? num(suburb.vacancyPct, NaN) : NaN;
+    push('vacancy_risk', 'How quickly will it lease?', {
+      nodata: 'Add suburb vacancy data to score lease-up risk.',
+      strong: 'Tight rental market — tenants compete.',
+      ok: 'Normal vacancy — lease-up is routine.',
+      watch: 'Loose market — expect gaps between tenancies.',
+    }, Number.isFinite(vacancy) ? bandScore(vacancy,
+      [[1, 100], [2, 75], [3.5, 42], [5, 15], [7, 0]]) : null,
+    [chip('Vacancy', vacancy, '%', 1, null,
+          { note: 'Above ~3% landlords compete for tenants' })]);
+
+    // 5. Rent positioning vs the suburb median for this bedroom count.
+    const medRent = rentMedianFor(suburb, beds);
+    const rentRatio = rent > 0 && medRent ? rent / medRent : null;
+    push('rent_positioning', 'Is the rent assumption realistic?', {
+      nodata: 'Add suburb rent data for this bedroom count to check the asking rent.',
+      strong: 'Rent at or below the suburb median — very lettable.',
+      ok: 'Asking slightly above the suburb median — condition must back it.',
+      watch: 'Rent well above the suburb median — the assumption is optimistic.',
+    }, rentRatio == null ? null : bandScore(rentRatio,
+      [[0.85, 95], [1.0, 85], [1.15, 68], [1.3, 42], [1.5, 15]]),
+    [chip('Asking rent', rent, '$', 0),
+     medRent ? chip(`Suburb median rent (${beds <= 2 ? '≤2' : beds}-bed)`, medRent, '$', 0) : null,
+     rentRatio == null ? null : chip('Rent / median', rentRatio, '×', 2)]);
+
+    // 6. Growth outlook.
+    const growth = suburb ? num(suburb.growth5yrPct, NaN) : NaN;
+    push('growth_outlook', 'What is the growth track record?', {
+      nodata: 'Add suburb growth data to score the track record.',
+      strong: 'Suburb prices have grown strongly over five years.',
+      ok: 'Modest historical growth.',
+      watch: 'Flat or falling suburb prices over five years.',
+    }, Number.isFinite(growth) ? bandScore(growth,
+      [[0, 15], [4, 45], [8, 65], [12, 82], [20, 95]]) : null,
+    [chip('5-yr price growth', growth, '%', 1),
+     chip('Population growth', suburb ? num(suburb.populationGrowthPct, NaN) : NaN, '%', 2),
+     chip('Approvals ratio', suburb ? num(suburb.approvalsRatio, NaN) : NaN, '', 2, null,
+          { note: 'Approvals vs stock: <1 undersupply, >1.5 oversupply risk' })]);
+
+    const scored = out.filter((v) => v.score != null).map((v) => v.score);
+    return { verdicts: out,
+      avg: scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length) : null };
+  }
+
   function riskChecklist(rawInputs, suburb) {
     const inputs = singleView(normalizeInputs(rawInputs));
     const checks = [];
@@ -2366,6 +2549,7 @@
     landTaxQLD,
     marginalRate,
     incomeTaxEstimate,
+    ownerTaxSplit,
     lmiEstimate,
     loanPayment,
     advanceLoan,
@@ -2383,7 +2567,9 @@
     scoreBand,
     compDerivations,
     growthScenarios,
+    ownedInputs,
     riskChecklist,
+    dealVerdicts,
     calculateAll,
   };
 

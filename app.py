@@ -33,6 +33,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import auth
 import areadata
 import attachments
+import census
 import comps_search
 import db
 import domain_api
@@ -140,6 +141,7 @@ app.register_blueprint(actuals.bp)
 app.register_blueprint(areadata.bp)
 app.register_blueprint(attachments.bp)
 app.register_blueprint(branding.bp)
+app.register_blueprint(census.bp)
 app.register_blueprint(markets.bp)
 app.register_blueprint(sales.bp)
 app.register_blueprint(comps_search.bp)
