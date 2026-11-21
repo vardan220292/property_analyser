@@ -838,7 +838,118 @@
       const d = await api(`/api/portal/presentation/${key}/evidence`);
       evidenceCache[key] = d;
       renderEvidence(d);
+      renderDealCheckPortal(d).catch(() => {});
     } catch (e) { /* evidence is best-effort */ }
+  }
+
+  // ------------------------------------------------------------------
+  // Deal check — same verdict engines as the agent's app, fed by the
+  // presentation snapshot and the portal's evidence payload.
+  // ------------------------------------------------------------------
+
+  function portalSuburb(evSub) {
+    if (!evSub) return null;
+    const v = (x) => (x == null ? null : Number(x));
+    return {
+      medianPrice: v(evSub.median_price),
+      medianRent2Bed: v(evSub.median_rent_2bed),
+      medianRent3Bed: v(evSub.median_rent_3bed),
+      medianRent4Bed: v(evSub.median_rent_4bed),
+      vacancyPct: v(evSub.vacancy_pct),
+      growth5yrPct: v(evSub.growth_5yr_pct),
+      populationGrowthPct: v(evSub.population_growth_pct),
+      approvalsRatio: v(evSub.approvals_ratio),
+      medianDaysOnMarket: v(evSub.median_days_on_market),
+    };
+  }
+
+  function dcPill(status) {
+    return status === 'strong' ? 'STRONG' : status === 'ok' ? 'OK'
+      : status === 'watch' ? 'WATCH' : 'NO DATA';
+  }
+
+  function dcChipHtml(m) {
+    const dp = m.dp != null ? m.dp : 1;
+    const fmt = (v) => (v == null || !Number.isFinite(Number(v)) ? null
+      : dp ? Number(v).toFixed(dp) : Math.round(Number(v)).toLocaleString());
+    const bits = [];
+    if (m.percentile != null) bits.push(m.percentile + 'th pct');
+    const bm = fmt(m.benchmark);
+    if (bm != null) bits.push((m.percentile != null ? 'median ' : 'suburb ')
+      + bm + (m.unit === '$' ? '' : m.unit));
+    const sub = bits.join(' · ') || m.note || '';
+    const val = fmt(m.value);
+    const shown = val == null ? '—' : (m.unit === '$' ? '$' + val : val + (m.unit || ''));
+    return `<div class="dc-chip" title="${escapeHtml(m.note || '')}">
+      <span class="dc-chip-label">${escapeHtml(m.label)}</span>
+      <span class="dc-chip-val"><strong>${escapeHtml(shown)}</strong>
+      ${sub ? `<small>${escapeHtml(sub)}</small>` : ''}</span></div>`;
+  }
+
+  function dcCardHtml(v) {
+    return `<div class="dc-card dc-${v.status}">
+      <div class="dc-card-head">
+        <span class="dc-pill">${dcPill(v.status)}</span>
+        <span class="dc-card-score">${v.score != null ? v.score + '/100' : ''}</span>
+      </div>
+      <div class="dc-card-q">${escapeHtml(v.question)}</div>
+      <div class="dc-card-headline">${escapeHtml(v.headline)}</div>
+      ${(v.metrics || []).map(dcChipHtml).join('')}
+    </div>`;
+  }
+
+  async function renderDealCheckPortal(ev) {
+    const sec = $('#p-dealcheck-sec'), host = $('#p-dealcheck');
+    if (!sec || !host) return;
+    const inputs = state.inputs || {};
+    const meta = ((inputs.properties || [])[0] || {}).addressMeta || {};
+    const suburb = portalSuburb(ev && ev.suburb);
+    const comps = ((ev || {}).comps || []).map((c) => ({
+      soldPrice: c.sold_price, beds: c.beds }));
+    const rentals = ((ev || {}).rentals || []).map((r) => ({
+      rentWeekly: r.rent_weekly, bedrooms: r.bedrooms }));
+    const st = inputs.state;
+    const lat = Number(meta.lat), lon = Number(meta.lon);
+    const [census, growth] = await Promise.all([
+      Number.isFinite(lat) && Number.isFinite(lon)
+        ? api(`/api/markets/census/point?lat=${lat}&lon=${lon}`).catch(() => null)
+        : Promise.resolve(null),
+      st ? api(`/api/markets/prices?state=${encodeURIComponent(st)}`)
+           .then((d) => window.PropertyAnalyserEngine.stateGrowth5yr(d, st)).catch(() => null)
+         : Promise.resolve(null),
+    ]);
+    const bundle = window.PropertyAnalyserEngine.dealCheckBundle({
+      census, inputs,
+      metrics: ((state.result || {}).properties || [])[0]
+        ? state.result.properties[0].metrics : null,
+      suburb,
+      evidence: { comps, rentals, suburb,
+                  stateGrowth5yr: growth && growth.pct,
+                  stateGrowthLabel: growth && growth.label },
+    });
+    const drivers = (bundle.overall || {}).drivers || {};
+    const driverBits = [
+      (drivers.for || []).length ? `For: ${escapeHtml(drivers.for.join(' · '))}` : '',
+      (drivers.against || []).length ? `Against: ${escapeHtml(drivers.against.join(' · '))}` : '',
+    ].filter(Boolean);
+    host.innerHTML = `
+      <div class="dc-banner dc-${(bundle.overall || {}).status || 'nodata'}">
+        <div class="dc-banner-word">${escapeHtml((bundle.overall || {}).verdictWord || '—')}</div>
+        <div class="dc-banner-copy">
+          <div><strong>${escapeHtml((bundle.sa2 || {}).name || 'Area not located')}</strong> — ${escapeHtml((bundle.overall || {}).headline || '')}</div>
+          ${driverBits.map((b) => `<div class="dc-drivers">${b}</div>`).join('')}
+        </div>
+        <div class="dc-banner-score">${bundle.overall.score != null ? bundle.overall.score : '—'}<small>/100</small></div>
+      </div>
+      ${[['area', 'The area — census fundamentals'], ['deal', 'The deal — your numbers'],
+         ['market', 'The market — local evidence']].map(([g, label]) => {
+        const list = (bundle.verdicts || []).filter((v) => v.group === g);
+        if (!list.length) return '';
+        return `<div class="chip-row-label">${escapeHtml(label)}</div>
+          <div class="dc-grid">${list.map(dcCardHtml).join('')}</div>`;
+      }).join('')}
+      <div class="source-note">Scored automatically from ABS census data, the numbers in this proposal and the agent's local evidence. Percentiles compare the area with all of Australia. An indication only — not financial advice.</div>`;
+    sec.classList.remove('hidden');
   }
 
   // ------------------------------------------------------------------

@@ -842,6 +842,101 @@ check('foreign buyerType flows into funding',
   check('2-bed matches the ≤2 band (700 vs 550 = 1.27× → ok)',
         v({ purchasePrice: 650000, weeklyRent: 700, bedrooms: 2 }, METRICS, SUB)
           .rent_positioning.status, 'ok');
+
+  const twoBed = v({ purchasePrice: 650000, weeklyRent: 650, bedrooms: 2 }, METRICS, SUB);
+  check('2-bed price uses 0.8 bedroom factor (est. median 520k → 1.25× → watch)',
+        twoBed.price_vs_market.status, 'watch');
+  check('2-bed est. median chip value',
+        twoBed.price_vs_market.metrics.find((m) => m.label.includes('Est. median')).value,
+        520000);
+  check('3-bed price factor is neutral (1.0)', fair.price_vs_market.status, 'strong');
+}
+
+// =====================================================================
+// Market-evidence verdicts (Deal Check phase 3)
+// =====================================================================
+
+{
+  const SUB = { medianDaysOnMarket: 28, growth5yrPct: 28 };
+  const EV = {
+    comps: [{ soldPrice: 660000, beds: 3 }, { soldPrice: 655000, beds: 3 },
+            { soldPrice: 670000, beds: 3 }],
+    rentals: [{ rentWeekly: 655, bedrooms: 3 }, { rentWeekly: 645, bedrooms: 3 },
+              { rentWeekly: 660, bedrooms: 3 }],
+    suburb: SUB,
+    stateGrowth5yr: 22.0,
+    stateGrowthLabel: 'Brisbane 5-yr median growth (ABS)',
+  };
+  const mv = (inputs, ev) => {
+    const r = E.marketVerdicts(inputs, ev);
+    return Object.fromEntries(r.verdicts.map((x) => [x.key, x]));
+  };
+  const good = mv({ purchasePrice: 650000, weeklyRent: 650, bedrooms: 3 }, EV);
+  check('four market verdicts', Object.keys(good).length, 4);
+  check('all market verdicts carry group=market',
+        E.marketVerdicts({}, EV).verdicts.every((x) => x.group === 'market'), true);
+  check('sales median 660k vs 650k price → strong', good.comps_price.status, 'strong');
+  check('lettings median 650 vs 650 rent → strong', good.comps_rent.status, 'strong');
+  check('28 days on market → strong', good.days_on_market.status, 'strong');
+  check('28% suburb vs 22% state → strong', good.growth_vs_state.status, 'strong');
+  check('market avg is high', E.marketVerdicts(
+        { purchasePrice: 650000, weeklyRent: 650, bedrooms: 3 }, EV).avg > 70, true);
+
+  const stretch = mv({ purchasePrice: 850000, weeklyRent: 850, bedrooms: 3 },
+                      { comps: EV.comps, rentals: EV.rentals,
+                        suburb: { medianDaysOnMarket: 95, growth5yrPct: 2 },
+                        stateGrowth5yr: 20 });
+  check('paying 29% above sales median → watch', stretch.comps_price.status, 'watch');
+  check('rent 30% above lettings → watch', stretch.comps_rent.status, 'watch');
+  check('95 days on market → watch', stretch.days_on_market.status, 'watch');
+  check('18pts below state growth → watch', stretch.growth_vs_state.status, 'watch');
+
+  const empty = mv({ purchasePrice: 650000, weeklyRent: 650, bedrooms: 3 }, {});
+  check('no evidence → all four nodata, avg null',
+        Object.values(empty).every((x) => x.status === 'nodata')
+        && E.marketVerdicts({}, {}).avg == null, true);
+
+  const mixed = mv({ purchasePrice: 650000, weeklyRent: 650, bedrooms: 3 },
+                   { comps: [{ soldPrice: 660000, beds: 3 }, { soldPrice: 640000, beds: 2 },
+                             { soldPrice: 630000, beds: 2 }],
+                     suburb: { medianDaysOnMarket: 40 } });
+  check('comps work with rentals missing', mixed.comps_price.status != null
+        && mixed.comps_rent.status === 'nodata', true);
+  check('only 1 same-bed comp falls back to all comps (no bed tag)',
+        !mixed.comps_price.metrics[0].label.includes('(3-bed)'), true);
+}
+
+// =====================================================================
+// Deal Check bundle composer (shared by app, portal and PDF)
+// =====================================================================
+
+{
+  const SUB = { medianPrice: 650000, medianRent3Bed: 650, vacancyPct: 1.8,
+                growth5yrPct: 28, medianDaysOnMarket: 28 };
+  const b = E.dealCheckBundle({
+    census: { sa2: { name: 'Testville' },
+              overall: { score: 60, headline: 'census-only headline' },
+              verdicts: [{ key: 'rental_demand', question: 'Q1', status: 'strong',
+                           score: 80, headline: 'h', metrics: [] }],
+              source: 'ABS' },
+    inputs: { purchasePrice: 650000, weeklyRent: 650, bedrooms: 3, state: 'QLD' },
+    metrics: { grossYield: 0.052, weeklyOutOfPocket: 40 },
+    suburb: SUB,
+    evidence: { comps: [{ soldPrice: 660000, beds: 3 }, { soldPrice: 655000, beds: 3 },
+                        { soldPrice: 670000, beds: 3 }],
+                suburb: SUB, stateGrowth5yr: 22 },
+  });
+  check('bundle blends three lenses: 11 verdicts (1 fixture area + 6 deal + 4 market)',
+        b.verdicts.length, 11);
+  check('bundle overall blends lens averages (census 60, deal/market high → strong)',
+        b.overall.status === 'strong' && b.overall.verdictWord === 'PASS', true);
+  check('bundle groups present', ['area', 'deal', 'market'].every((g) =>
+        b.verdicts.some((v) => v.group === g)), true);
+  check('bundle carries sa2 + source', b.sa2.name === 'Testville' && b.source === 'ABS', true);
+
+  const bare = E.dealCheckBundle({ inputs: { purchasePrice: 500000, weeklyRent: 500 } });
+  check('bare inputs → 10 verdicts (6 deal + 4 market), overall nodata',
+        bare.verdicts.length === 10 && bare.overall.status === 'nodata', true);
 }
 
 // =====================================================================

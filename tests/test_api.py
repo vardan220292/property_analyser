@@ -1406,6 +1406,22 @@ else:
 # Markets median price history
 # ---------------------------------------------------------------------------
 
+r = c.get("/api/markets")
+d = (r.get_json() or {}).get("data") or {}
+check("markets national carries honest live flags",
+      isinstance(d.get("national"), dict)
+      and all("live" in v for v in (d.get("national") or {}).values()), True)
+
+import markets as markets_mod
+
+_sdmx = {"data": {"dataSets": [{"series": {"s1": {"observations": {
+    "0:0": [4.1], "1:0": [4.3], "2:0": [None]}}}}]}}
+check("SDMX parser takes the latest non-null observation",
+      markets_mod.parse_sdmx_series(_sdmx), 4.3)
+check("SDMX parser survives junk payloads",
+      markets_mod.parse_sdmx_series({"nonsense": 1}) is None
+      and markets_mod.parse_sdmx_series(None) is None, True)
+
 r = c.get("/api/markets/prices")
 d = (r.get_json() or {}).get("data") or {}
 if r.status_code == 200:

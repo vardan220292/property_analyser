@@ -475,9 +475,11 @@ def _section_deal_check(p):
             + drivers_html
             + _rows("area", "The area — census fundamentals")
             + _rows("deal", "The deal — your numbers")
+            + _rows("market", "The market — local evidence")
             + '<div class="note">Area percentiles compare this SA2 with all SA2s nationally '
-              '(ABS 2021 Census); deal verdicts score your numbers against the linked suburb. '
-              'One input to the decision — pair with price, yield and cash flow. '
+              '(ABS 2021 Census); deal verdicts score your numbers against the linked suburb; '
+              'market verdicts use your saved comparables, suburb data and the ABS price '
+              'series. One input to the decision — pair with cash flow. '
               'Not financial advice.</div>')
 
 

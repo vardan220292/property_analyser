@@ -9,6 +9,7 @@ import json
 import os
 import re
 import time
+from datetime import datetime
 
 import requests
 from flask import Blueprint, jsonify, request
@@ -29,6 +30,28 @@ NATIONAL = {
     "medianAge": {"value": 38.40, "unit": "yrs", "label": "June 2025",
                   "source": "ABS Demographics"},
 }
+
+# Live-refreshable national indicators. data.api.abs.gov.au (SDMX) is the
+# intended feed; it is CloudFront-blocked on some networks (including this
+# deployment), so every indicator falls back to the seeded figures above and
+# the response says honestly whether values are live or bundled.
+SDMX_BASE = "https://data.api.abs.gov.au/api/v1/data"
+# (national key, dataflow, candidate data keys, headline suffix)
+# LF: unemployment rate, persons, seasonally adjusted, Australia (monthly).
+# ERP: annual natural growth + net overseas migration → total growth rate.
+SDMX_QUERIES = {
+    "unemployment": {
+        "flow": "LF",
+        "keys": ["1.3.30.20.15.Q", "1.3.30.20.15.M", "1.30.20.15.M"],
+        "label": "Unemployment rate, persons",
+    },
+    "populationGrowth": {
+        "flow": "ERP",
+        "keys": ["4.1", "AUS.4", "4"],
+        "label": "Annual population growth rate",
+    },
+}
+SDMX_TTL_SECONDS = 12 * 3600
 
 STATES = {
     "WA": {"name": "Western Australia", "populationGrowth": 2.22,
@@ -59,11 +82,81 @@ CAPITALS = {
 @bp.get("/")
 def markets():
     return jsonify({"ok": True, "data": {
-        "national": NATIONAL,
+        "national": _national(),
         "states": STATES,
         "capitals": CAPITALS,
         "asOf": "ABS releases, as labelled per statistic",
     }})
+
+
+# ---------------------------------------------------------------------------
+# Live national indicators — SDMX JSON from data.api.abs.gov.au, falling back
+# to the seeded snapshot. The parse walks the returned observations and takes
+# the latest non-null value, so minor dimension-order changes don't break it.
+# ---------------------------------------------------------------------------
+
+_sdmx_cache = {"data": None, "at": 0.0}
+
+
+def parse_sdmx_series(payload):
+    """Pure: SDMX-JSON -> latest observation value (float) or None."""
+    try:
+        latest = None
+        for series in payload.get("data", {}).get("dataSets", []):
+            for s in series.get("series", {}).values():
+                obs = s.get("observations", {}) or {}
+                for key, val in obs.items():
+                    v = (val or [None])[0]
+                    if isinstance(v, (int, float)):
+                        idx = int(str(key).split(":")[0])
+                        if latest is None or idx > latest[0]:
+                            latest = (idx, v)
+        return latest[1] if latest else None
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _refresh_national():
+    """Best-effort live refresh of the SDMX-backed national indicators.
+    Returns {key: value} for whatever succeeded, or {} on any failure."""
+    out = {}
+    now = time.time()
+    for key, q in SDMX_QUERIES.items():
+        for dk in q["keys"]:
+            try:
+                r = requests.get(f"{SDMX_BASE}/{q['flow']}/{dk}",
+                                 params={"format": "json"},
+                                 timeout=15,
+                                 headers={"User-Agent": TVD_UA})
+                if r.status_code != 200:
+                    continue
+                v = parse_sdmx_series(r.json())
+                if v is not None:
+                    out[key] = round(v, 2)
+                    break
+            except Exception:
+                continue
+    return out
+
+
+def _national():
+    """Seeded NATIONAL with live values overlaid where the SDMX fetch works.
+    Overlays carry live:true + fetched date; everything else says 'bundled'."""
+    now = time.time()
+    if now - _sdmx_cache["at"] > SDMX_TTL_SECONDS:
+        _sdmx_cache["data"] = _refresh_national()
+        _sdmx_cache["at"] = now
+    live = _sdmx_cache["data"] or {}
+    out = {}
+    for key, item in NATIONAL.items():
+        entry = dict(item)
+        if key in live:
+            entry.update({"value": live[key], "live": True,
+                          "label": f"Fetched {datetime.utcnow().strftime('%d %b %Y')} — {item['label']}"})
+        else:
+            entry["live"] = False
+        out[key] = entry
+    return out
 
 
 # ---------------------------------------------------------------------------

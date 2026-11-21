@@ -728,7 +728,8 @@
         const val = n.unit === '$/wk' ? fmtMoney(n.value) + '/wk' : n.value + n.unit;
         return '<div class="card"><div class="label">' + escapeHtml(MK_LABELS[k]) + '</div>' +
           '<div class="value">' + escapeHtml(val) + '</div>' +
-          '<div class="card-sub">' + escapeHtml(n.label) + '</div></div>';
+          '<div class="card-sub">' + escapeHtml(n.label) +
+          (n.live ? ' · <strong>live ABS</strong>' : ' · bundled snapshot') + '</div></div>';
       }).join('') ||
       '<div class="empty-note">National market data is not loaded.</div>';
 
@@ -1383,7 +1384,7 @@
   // Deal Check — ten census verdicts for the active property's SA2
   // ------------------------------------------------------------------
 
-  const dc = { last: null, valuations: new Map() };
+  const dc = { last: null, valuations: new Map(), stateGrowth: new Map() };
 
   function dealCheckSubject() {
     const meta = activePropertyIndex() != null
@@ -1422,40 +1423,34 @@
     return v || suburb || null;
   }
 
+  // ABS capital-city median growth over five years (TVD series), used as the
+  // state benchmark for the growth_vs_state market verdict.
+  async function dcStateGrowth5yr(stateCode) {
+    if (!stateCode) return null;
+    if (!dc.stateGrowth.has(stateCode)) {
+      dc.stateGrowth.set(stateCode,
+        api(`/api/markets/prices?state=${encodeURIComponent(stateCode)}`)
+          .then((d) => E.stateGrowth5yr(d, stateCode)).catch(() => null));
+    }
+    return dc.stateGrowth.get(stateCode);
+  }
+
+  async function dcEvidence(suburb, comps, rentals) {
+    const st = (await dcStateGrowth5yr(state.inputs.state)) || {};
+    return { comps: comps || state.comps || [], rentals: rentals || state.rentals || [],
+             suburb, stateGrowth5yr: st.pct, stateGrowthLabel: st.label };
+  }
+
   // Census verdicts (server-scored) + deal verdicts (engine, client-scored)
-  // blend 50/50 into the overall; a missing half drops out with a note.
-  function buildDealCheckBundle(censusData, inputs, result, suburb, idx) {
+  // + market-evidence verdicts, blended by the engine's shared composer.
+  function buildDealCheckBundle(censusData, inputs, result, suburb, idx, evidence) {
     const i = Number.isInteger(idx) ? idx
       : (activePropertyIndex() != null ? activePropertyIndex() : 0);
-    const deal = E.dealVerdicts(inputs, (((result || {}).properties || [])[i] || {}).metrics, suburb);
-    const censusVerdicts = ((censusData || {}).verdicts || []).map((v) =>
-      Object.assign({}, v, { group: 'area' }));
-    const verdicts = censusVerdicts.concat(deal.verdicts);
-    const cAvg = ((censusData || {}).overall || {}).score;
-    const parts = [cAvg, deal.avg].filter((x) => x != null);
-    const score = parts.length
-      ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : null;
-    const status = score == null ? 'nodata'
-      : score >= 65 ? 'strong' : score >= 40 ? 'ok' : 'watch';
-    const word = { strong: 'PASS', ok: 'CONDITIONAL', watch: 'CAUTION' };
-    const headline = status === 'nodata' ? 'Not enough data to score this deal.'
-      : deal.avg == null ? ((censusData || {}).overall || {}).headline
-      : cAvg == null ? `Deal numbers look ${status === 'watch' ? 'weak' : 'sound'} — census scoring unavailable.`
-      : {
-          strong: 'Area and deal fundamentals support this one.',
-          ok: 'Mixed fundamentals — work the flags below.',
-          watch: 'Fundamentals are weak overall — proceed only with a clear thesis.',
-        }[status];
-    const ranked = verdicts.filter((v) => v.score != null)
-      .slice().sort((a, b) => b.score - a.score);
-    const overall = {
-      score, status, verdictWord: score == null ? '—' : word[status], headline,
-      drivers: { for: ranked.slice(0, 2).map((v) => v.question),
-                 against: ranked.slice(-2).reverse()
-                   .filter((v) => v.score < 50).map((v) => v.question) },
-    };
-    return { sa2: (censusData || {}).sa2 || null,
-             verdicts, overall, source: (censusData || {}).source || null };
+    return E.dealCheckBundle({
+      census: censusData, inputs,
+      metrics: (((result || {}).properties || [])[i] || {}).metrics,
+      suburb, evidence,
+    });
   }
 
   function dcOrdinal(n) {
@@ -1509,7 +1504,8 @@
           (drivers.against || []).length ? `Against: ${escapeHtml(drivers.against.join(' · '))}` : '',
         ].filter(Boolean).join('</div><div class="dc-drivers">')}</div>` : '';
     const groupHtml = [['area', 'The area — census fundamentals'],
-                       ['deal', 'The deal — your numbers']].map(([g, label]) => {
+                       ['deal', 'The deal — your numbers'],
+                       ['market', 'The market — local evidence']].map(([g, label]) => {
       const list = (bundle.verdicts || []).filter((v) => v.group === g);
       if (!list.length) return '';
       return `<div class="chip-row-label">${escapeHtml(label)}</div>
@@ -1528,7 +1524,7 @@
       </div>
       ${suburbHint}
       ${groupHtml}
-      ${bundle.source ? `<div class="source-note">${escapeHtml(bundle.source)} — area percentiles compare this SA2 with all of Australia; deal verdicts score your numbers against the linked suburb. Pair with cash flow before deciding.</div>` : ''}`;
+      ${bundle.source ? `<div class="source-note">${escapeHtml(bundle.source)} — area percentiles compare this SA2 with all of Australia; deal verdicts score your numbers against the linked suburb; market verdicts use your saved comparables, suburb data and the ABS price series.</div>` : ''}`;
   }
 
   async function initDealCheckPage(force) {
@@ -1552,7 +1548,11 @@
       }
     }
     const suburb = await dcPriceBenchmark(subj && subj.meta, suburbRow);
-    const bundle = buildDealCheckBundle(census, state.inputs, state.result, suburb);
+    if (state.scenarioId && !state.comps) {
+      try { await loadComps(); } catch (e) { /* evidence is best-effort */ }
+    }
+    const bundle = buildDealCheckBundle(census, state.inputs, state.result, suburb,
+      undefined, await dcEvidence(suburb));
     dc.last = subj ? { lat: subj.lat, lon: subj.lon, data: census, bundle } : { data: census, bundle };
     renderDealCheck(bundle, { suburbLinked: !!suburb });
   }
@@ -4730,7 +4730,7 @@
     };
   }
 
-  async function dealCheckForReport(inputs, result) {
+  async function dealCheckForReport(sid, inputs, result) {
     const meta = ((inputs.properties || [])[0] || {}).addressMeta || {};
     const lat = numOrNull(meta.lat), lon = numOrNull(meta.lon);
     let census = null;
@@ -4739,7 +4739,11 @@
     }
     const suburbRow = (state.suburbs || []).find((s) => s.id === Number(inputs.suburbId)) || null;
     const suburb = await dcPriceBenchmark(meta, suburbRow);
-    return buildDealCheckBundle(census, inputs, result, suburb, 0);
+    let comps = [], rentals = [];
+    try { comps = await api(`/api/scenarios/${sid}/comps`); } catch (e) { /* best-effort */ }
+    try { rentals = await api(`/api/scenarios/${sid}/rentals`); } catch (e) { /* best-effort */ }
+    return buildDealCheckBundle(census, inputs, result, suburb, 0,
+      await dcEvidence(suburb, comps, rentals));
   }
 
     async function downloadScenarioReport(sid, taxPack = false) {
@@ -4753,7 +4757,7 @@
       const inputs = result.inputs;
       const payload = buildReportPayload(result, inputs);
       if (taxPack) payload.taxPack = true;
-      else payload.dealCheck = await dealCheckForReport(inputs, result);
+      else payload.dealCheck = await dealCheckForReport(sid, inputs, result);
       const resp = await fetch(`/api/scenarios/${sid}/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
