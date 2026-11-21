@@ -19,3 +19,24 @@ package.json
 
 # OS noise
 .DS_Store
+
+# Uploaded documents (live on this machine only)
+data/attachments/
+
+# Branding logos (local-disk fallback when Supabase storage isn't configured)
+data/branding/
+
+# Downloaded ABS workbooks cache (data/markets/median-prices.json is a committed seed)
+data/markets/.tvd-cache.xlsx
+
+# Vic VG sales workbooks (user-downloaded; large binaries)
+data/sales/
+
+# DB backups (local copies)
+data/backups/
+
+# UI review screenshots (local only)
+ui-review/
+
+# Local dev server log
+server.log
