@@ -22,6 +22,12 @@ LAYER_URL = (
     "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/"
     "Vicmap_Property/FeatureServer/0/query"
 )
+# CFA/DEECA designated Bushfire Prone Areas — Victoria open data platform
+# (GeoServer WFS/WMS, CC BY 4.0). The same layer is served as a WMS tile
+# overlay for the property map.
+WFS_URL = "https://opendata.maps.vic.gov.au/geoserver/wfs"
+WMS_URL = "https://opendata.maps.vic.gov.au/geoserver/wms"
+BUSHFIRE_LAYER = "open-data-platform:bushfire_prone_area"
 CACHE_TTL = 12 * 3600
 _cache = {}
 _lock = threading.Lock()
@@ -43,6 +49,32 @@ def _cache_put(key, value):
         if len(_cache) > 500:
             _cache.pop(next(iter(_cache)))
         _cache[key] = (time.time(), value)
+
+
+def bushfire_intel(lat, lon):
+    """Point-in-BPA lookup via a WFS bbox intersect. Degraded mode:
+    anything that goes wrong returns prone=None instead of raising."""
+    # urn:ogc:def:crs:EPSG::4326 bbox is lat,lon (miny,minx,maxy,maxx).
+    params = {
+        "service": "WFS",
+        "version": "2.0.0",
+        "request": "GetFeature",
+        "typeNames": BUSHFIRE_LAYER,
+        "outputFormat": "application/json",
+        "count": 1,
+        "bbox": f"{lat - 0.0004:.6f},{lon - 0.0004:.6f},"
+                f"{lat + 0.0004:.6f},{lon + 0.0004:.6f},"
+                "urn:ogc:def:crs:EPSG::4326",
+    }
+    try:
+        response = requests.get(WFS_URL, params=params, timeout=8,
+                                headers={"User-Agent": "RV-PropertyAnalyser/1.0"})
+        response.raise_for_status()
+        body = response.json()
+        return {"prone": bool(body.get("features")), "source": WFS_URL,
+                "layer": BUSHFIRE_LAYER}
+    except (requests.RequestException, ValueError) as exc:
+        return {"prone": None, "error": str(exc)[:200]}
 
 
 def property_intel(lat, lon):
@@ -83,6 +115,7 @@ def property_intel(lat, lon):
         except (TypeError, ValueError):
             area = None
 
+    bushfire = bushfire_intel(lat, lon)
     payload = {
         "provider": "Vicmap Property",
         "jurisdiction": "VIC",
@@ -98,14 +131,21 @@ def property_intel(lat, lon):
             "areaSqm": area,
         } if feature else None),
         "parcelGeometry": geometry,
+        "bushfire": bushfire,
         "sources": [{
             "label": "Vicmap Property — Victorian Government",
             "url": "https://discover.data.vic.gov.au/dataset/vicmap-property-rest-api",
             "licence": "Creative Commons Attribution 4.0 International",
             "note": "Cadastral/property identifiers and parcel polygon",
+        }, {
+            "label": "Designated Bushfire Prone Area — CFA Victoria",
+            "url": "https://discover.data.vic.gov.au/dataset/designated-bushfire-prone-area-bpa",
+            "licence": "Creative Commons Attribution 4.0 International",
+            "note": "Point-in-polygon check against the state-wide BPA layer",
         }],
         "fetchedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "errors": [],
+        "errors": ([{"layer": "bushfire", "error": bushfire["error"]}]
+                   if bushfire.get("prone") is None and bushfire.get("error") else []),
     }
     _cache_put(key, payload)
     return payload

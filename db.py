@@ -40,6 +40,16 @@ _SCHEMA = [
         created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """,
+    # Onboarding answers (goal, properties owned) — generic key/value so
+    # new wizard questions need no migration.
+    """
+    CREATE TABLE IF NOT EXISTS user_prefs (
+        user_id   INTEGER NOT NULL,
+        key       TEXT NOT NULL,
+        value     TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (user_id, key)
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS client_profiles (
         user_id     INTEGER PRIMARY KEY,
@@ -227,6 +237,84 @@ _SCHEMA = [
     CREATE INDEX IF NOT EXISTS idx_rental_comps_scenario
         ON rental_comps(scenario_id)
     """,
+    # Client portfolios: one share link covering N property presentations.
+    # Access flows through the PORTFOLIO token; the per-item presentations
+    # keep their internal tokens (satisfying the UNIQUE constraint) but are
+    # never published.
+    """
+    CREATE TABLE IF NOT EXISTS portfolios (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        ba_user_id       INTEGER NOT NULL,
+        client_user_id   INTEGER NOT NULL,
+        title            TEXT NOT NULL DEFAULT '',
+        share_token_hash TEXT NOT NULL UNIQUE,
+        status           TEXT NOT NULL DEFAULT 'active',
+        expires_at       TEXT,
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_portfolios_ba ON portfolios(ba_user_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_portfolios_client ON portfolios(client_user_id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS portfolio_items (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        portfolio_id    INTEGER NOT NULL,
+        presentation_id INTEGER NOT NULL UNIQUE,
+        label           TEXT NOT NULL DEFAULT '',
+        summary_json    TEXT NOT NULL DEFAULT '{}',
+        position        INTEGER NOT NULL DEFAULT 0,
+        created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_portfolio_items ON portfolio_items(portfolio_id)
+    """,
+    # Due-diligence documents per scenario (BA uploads, clients read via
+    # an active presentation). Bytes live on disk; this row is metadata.
+    """
+    CREATE TABLE IF NOT EXISTS attachments (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        scenario_id  INTEGER NOT NULL,
+        user_id      INTEGER NOT NULL,
+        display_name TEXT NOT NULL,
+        stored_name  TEXT NOT NULL,
+        mime         TEXT NOT NULL,
+        bytes        INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_attachments_scenario ON attachments(scenario_id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ba_alerts (
+        user_id  INTEGER PRIMARY KEY,
+        enabled  INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS suburb_sales (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        state         TEXT NOT NULL,
+        suburb        TEXT NOT NULL,
+        dwelling_type TEXT NOT NULL DEFAULT 'houses',
+        period        TEXT NOT NULL,
+        median        INTEGER,
+        sales_count   INTEGER,
+        source        TEXT NOT NULL DEFAULT '',
+        created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(state, suburb, dwelling_type, period)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_suburb_sales_lookup
+        ON suburb_sales(state, suburb, dwelling_type, period)
+    """,
 ]
 
 # Postgres DDL transformation: identity columns instead of AUTOINCREMENT,
@@ -399,6 +487,11 @@ class Database:
             )
             self._exec_raw(
                 "CREATE INDEX IF NOT EXISTS idx_scenarios_user ON scenarios(user_id)")
+            self._conn.commit()
+
+    def commit(self):
+        """Flush pending writes (SQLite only — Postgres autocommits)."""
+        if not self.dsn and self._conn is not None:
             self._conn.commit()
 
     def _exec_raw(self, sql):
