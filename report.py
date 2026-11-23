@@ -530,18 +530,21 @@ def _section_deal_check(p):
         driver_bits.append("Against: " + "; ".join(drivers["against"]))
     drivers_html = (f'<div class="note">Key drivers — { _h(" ".join(driver_bits)) }</div>'
                     if driver_bits else "")
+    # The bundle's source stamp names every dataset vintage behind the
+    # area scores (census baseline plus the newer ABS/DEWR/ATO sets).
+    area_src = dc.get("source") or "ABS 2021 Census, SA2 level"
     return (f'<h1 class="sec">Deal check &amp; recommendation</h1>'
             f'<div class="kv"><div><span class="k">Area ({_h(sa2)})</span> '
             f'<strong>{_h(word)} · {"" if score is None else f"{score}/100"}</strong></div></div>'
             f'<div class="note">{_h(overall.get("headline") or "")}</div>'
             + drivers_html
-            + _rows("area", "The area — census fundamentals")
+            + _rows("area", "The area — fundamentals")
             + _rows("deal", "The deal — your numbers")
             + _rows("market", "The market — local evidence")
-            + '<div class="note">Area percentiles compare this SA2 with all SA2s nationally '
-              '(ABS 2021 Census); deal verdicts score your numbers against the linked suburb; '
-              'market verdicts use your saved comparables, suburb data and the ABS price '
-              'series. One input to the decision — pair with cash flow. '
+            + f'<div class="note">Area data: {_h(area_src)}. Area percentiles compare this '
+              'SA2 with all SA2s nationally; deal verdicts score your numbers against the '
+              'linked suburb; market verdicts use your saved comparables, suburb data and '
+              'the ABS price series. One input to the decision — pair with cash flow. '
               'Not financial advice.</div>')
 
 

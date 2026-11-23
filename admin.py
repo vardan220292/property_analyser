@@ -60,6 +60,18 @@ def data_status():
                  f"{len(bench.get('states') or {})} states with percentiles",
     })
 
+    import areastats
+    for key, ds in areastats.DATASETS.items():
+        snap = areastats.load(key)
+        datasets.append({
+            "dataset": ds["label"],
+            "lastRefresh": (snap or {}).get("asOf"),
+            "rows": len((snap or {}).get("rows") or {}) or None,
+            "notes": f"vintage {sorted(((snap or {}).get('vintage') or {}).values())}"
+                     f"; refresh every ~{ds['cadence_days']}d"
+                     if snap else "no snapshot — run refresh (daily_refresh does it)",
+        })
+
     import state_intel
     datasets.append({
         "dataset": "Open Land Fabric parcel/zoning (via state_intel cache)",

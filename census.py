@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 import requests
 from flask import Blueprint, jsonify, request
 
+import areastats
+
 bp = Blueprint("census", __name__, url_prefix="/api/markets/census")
 
 LAYER = ("https://services1.arcgis.com/v8Kimc579yljmjSP/arcgis/rest/services/"
@@ -282,6 +284,7 @@ def load_benchmarks():
                     data = json.load(fh)  # stale beats nothing
             except (OSError, ValueError):
                 return None
+        data = _augmented_benchmarks(data)
         _bench["data"], _bench["at"] = data, time.time()
         return data
 
@@ -292,7 +295,49 @@ def refresh_benchmarks():
     os.makedirs(os.path.dirname(SNAPSHOT), exist_ok=True)
     with open(SNAPSHOT, "w") as fh:
         json.dump(data, fh)
+    data = _augmented_benchmarks(data)
     _bench["data"], _bench["at"] = data, time.time()
+    return data
+
+
+# Newer-dataset folds (areastats) — fields percentile over their own
+# distributions and are merged into the census benchmarks in memory, so the
+# on-disk census snapshot keeps its pure shape.
+def _benchmarks_meta():
+    """field -> {label, unit, dp, vintage, source} across census + areastats."""
+    meta = {}
+    for f, d in METRIC_DEFS.items():
+        meta[f] = {"label": d["label"], "unit": d["unit"], "dp": d["dp"],
+                   "vintage": "2021 Census", "source": "ABS 2021 Census"}
+    meta["erp_p_20"] = {"label": "Population (2021 ERP)", "unit": "", "dp": 0,
+                        "vintage": "2021 Census", "source": "ABS 2021 Census"}
+    meta.update(areastats.vintage_meta())
+    return meta
+
+
+def _augmented_benchmarks(data):
+    if not data:
+        return data
+    fields = data.setdefault("fields", {})
+    states = data.setdefault("states", {})
+    extra = areastats.benchmark_rows()
+    if extra:
+        for f in areastats.FIELD_META:
+            p = _percentiles([r.get(f) for r in extra])
+            if p and f not in fields:
+                fields[f] = p
+        by_state = {}
+        for r in extra:
+            st = _state_from_code(r.get("sa2_code_2021"))
+            if st:
+                by_state.setdefault(st, []).append(r)
+        for st, srows in by_state.items():
+            sb = states.setdefault(st, {})
+            for f in areastats.FIELD_META:
+                p = _percentiles([r.get(f) for r in srows])
+                if p:
+                    sb[f] = p
+    data["meta"] = _benchmarks_meta()
     return data
 
 
@@ -346,16 +391,23 @@ def deal_verdicts(values, benchmarks):
         for metric, better in comps:
             v = values.get(metric)
             b = fields.get(metric)
+            if metric == "lf_4":
+                # Prefer the fresher DEWR SALM unemployment when present.
+                sv, sb = values.get("salm_unemp_rate"), fields.get("salm_unemp_rate")
+                if sv is not None and sb:
+                    metric, v, b = "salm_unemp_rate", sv, sb
             if v is None or not b:
                 continue
             pct = _percentile_of(v, b)
             pos = pct if better == "high" else 100 - pct
             scores.append(pos)
-            d = METRIC_DEFS[metric]
-            chips.append({"key": metric, "label": d["label"], "unit": d["unit"],
-                          "dp": d["dp"], "value": v,
+            d = METRIC_DEFS.get(metric) or areastats.chip_def(metric) or {}
+            vintage = ((benchmarks.get("meta") or {}).get(metric) or {}).get("vintage")
+            chips.append({"key": metric, "label": d.get("label", metric),
+                          "unit": d.get("unit", ""), "dp": d.get("dp", 1),
+                          "value": v,
                           "benchmark": b["p50"], "percentile": round(pct),
-                          "better": better,
+                          "better": better, "vintage": vintage,
                           "note": d.get("note")})
         if not scores:
             out.append({"key": key, "question": question, "status": "nodata",
@@ -410,22 +462,47 @@ def point_endpoint():
         return jsonify({"ok": False, "error": "lat and lon are required numbers"}), 400
     if not (-44.5 <= lat <= -9) or not (112 <= lon <= 155):
         return jsonify({"ok": False, "error": "point is outside Australia"}), 422
+    postcode = (request.args.get("postcode") or "").strip()
     try:
         attrs = point_lookup(lat, lon)
     except Exception as e:
         return jsonify({"ok": False, "error": f"census lookup failed: {e}"}), 502
     if not attrs:
         return jsonify({"ok": False, "error": "no SA2 covers this point"}), 404
+    sa2_values = areastats.sa2_values(attrs.get("sa2_code_2021"))
+    pc_values = areastats.postcode_values(postcode)
+    attrs.update(sa2_values)
     benchmarks = load_benchmarks() or {"fields": {}}
     verdicts, overall = deal_verdicts(attrs, benchmarks)
+    values = {k: attrs.get(k) for k in list(METRIC_DEFS) + ["erp_p_20"]}
+    values.update(sa2_values)
+    values.update(pc_values)
+    stamps = ["ABS 2021 Census (SEIFA/ERP/LEP), SA2 level"] + areastats.dataset_labels()
+    if pc_values:
+        stamps.append("ATO 2023-24 (postcode match)")
     return jsonify({"ok": True, "data": {
         "sa2": {"code": attrs.get("sa2_code_2021"),
                 "name": attrs.get("sa2_name_2021")},
         "state": attrs.get("state"),
-        "values": {k: attrs.get(k) for k in list(METRIC_DEFS) + ["erp_p_20"]},
+        "values": values,
         "verdicts": verdicts,
         "overall": overall,
         "benchmarks": benchmarks,
-        "source": "ABS 2021 Census (SEIFA/ERP/LEP), SA2 level",
+        "source": " · ".join(stamps),
         "fetchedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }})
+
+
+@bp.get("/rows")
+def rows_endpoint():
+    """Lightweight rows for one areastats dataset (heat-map client join)."""
+    key = (request.args.get("key") or "").strip()
+    if key not in areastats.DATASETS:
+        return jsonify({"ok": False, "error": "unknown dataset key"}), 400
+    snap = areastats.load(key)
+    if not snap:
+        return jsonify({"ok": False, "error": "dataset snapshot not available"}), 503
+    return jsonify({"ok": True, "data": {
+        "key": key, "geo": snap.get("geo"), "asOf": snap.get("asOf"),
+        "vintage": snap.get("vintage"), "rows": snap.get("rows"),
     }})

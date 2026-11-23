@@ -96,8 +96,18 @@ def run_once():
         failed.append(f"history: {failed_note}")
     # SDMX: clear so the next markets view re-pulls the ABS feed fresh.
     markets._sdmx_cache["data"], markets._sdmx_cache["at"] = None, 0.0
+    # Newer area datasets: staleness-gated, best-effort, stale snapshot kept.
+    import areastats
+    area_results = areastats.refresh_all()
+    area_failed = [r["key"] for r in area_results if r["status"] == "error"]
+    if area_failed:
+        failed.append("area datasets: " + ", ".join(area_failed))
+    # Benchmarks cache: drop so the merged view picks up any new snapshots.
+    import census
+    census._bench["data"], census._bench["at"] = None, 0.0
     summary = {"refreshed": refreshed, "failed": failed,
                "historyRows": history_rows,
+               "areaDatasets": [r["status"] for r in area_results],
                "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     log.info("daily refresh: %s", summary)
     try:

@@ -1036,6 +1036,19 @@
     { key: 'irsd_score', label: 'Disadvantage score (SEIFA)', group: 'Economy & disadvantage',
       unit: '', invert: true, note: 'Low score = most disadvantaged (coloured red)' },
     { key: 'erp_p_20', label: 'Population', group: 'Economy & disadvantage', unit: '' },
+    // Newer official datasets (areastats snapshots) — joined client-side
+    // from /api/markets/census/rows; the census FeatureServer doesn't serve
+    // these, hence fields: [] keeps them out of the viewport query.
+    { key: 'salm_unemp_rate', label: 'Unemployment (SALM)', group: 'People & income', unit: '%', dp: 1,
+      dataset: 'salm', fields: [], note: 'DEWR smoothed quarterly series — fresher than the census count' },
+    { key: 'erp_total', label: 'Population (ERP)', group: 'Economy & disadvantage', unit: '',
+      dataset: 'erp', fields: [], note: 'ABS Regional Population estimate' },
+    { key: 'erp_growth_1y_pct', label: 'Population growth 1yr %', group: 'Economy & disadvantage', unit: '%', dp: 1,
+      dataset: 'erp', fields: [], note: 'ERP change, latest financial year' },
+    { key: 'median_age', label: 'Median age (ERP)', group: 'Life stage', unit: '', dp: 0,
+      dataset: 'erp', fields: [], note: 'ABS Regional Population, age & sex' },
+    { key: 'approvals_annual', label: 'Dwelling approvals (yr)', group: 'Housing & tenure', unit: '',
+      dataset: 'approvals', fields: [], note: 'Total dwelling units approved, latest financial year' },
   ];
   const LQ_HEAT = HEAT_SOURCE;
   const LQ_LAYERS = [
@@ -1140,7 +1153,7 @@
            <label class="lq-layer"><input type="checkbox" data-lq-mine>
            <span>My properties (scenarios)</span></label></div>`
         + `<div class="lq-group"><div class="lq-group-head">Heat maps</div>
-           <div class="note">2021 Census, ABS (SA2). Shows the current map area.</div>
+           <div class="note">ABS census + newer official datasets (SA2 level) — each metric shows its own vintage.</div>
            <select id="lq-heat-metric">${heatGroupOptions().map((g) =>
              `<optgroup label="${escapeHtml(g.group)}">${g.items.map((m) =>
                `<option value="${m.key}">${escapeHtml(m.label)}</option>`).join('')}</optgroup>`).join('')}</select>
@@ -1243,7 +1256,29 @@
     return HEAT_METRICS.find((m) => m.key === key) || null;
   }
 
+  // Newer-dataset rows (areastats) fetched once per session and joined by
+  // SA2 code — the FeatureServer payload can't carry them.
+  const heatDatasetRows = new Map(); // dataset key -> { promise, data }
+  async function heatRowsFor(dataset) {
+    let entry = heatDatasetRows.get(dataset);
+    if (!entry) {
+      entry = { promise: null, data: null };
+      entry.promise = fetch(`/api/markets/census/rows?key=${encodeURIComponent(dataset)}`)
+        .then((r) => r.json())
+        .then((b) => { entry.data = b.ok ? b.data : null; return entry.data; })
+        .catch(() => { entry.data = null; return null; });
+      heatDatasetRows.set(dataset, entry);
+    }
+    return entry.promise;
+  }
+
   function heatValue(def, props) {
+    if (def.dataset) {
+      const snap = (heatDatasetRows.get(def.dataset) || {}).data;
+      const row = snap && (snap.rows || {})[String(props.sa2_code_2021)];
+      const v = row ? row[def.key] : null;
+      return Number.isFinite(v) ? v : null;
+    }
     if (def.compute) return def.compute(props);
     const v = props[def.key];
     return Number.isFinite(v) ? v : null;
@@ -1261,10 +1296,11 @@
       Math.floor(t * HEAT_SOURCE.ramp.length))];
   }
 
-  function heatLegendInto(sel, def, min, max) {
+  function heatLegendInto(sel, def, min, max, vintage) {
     const el = $(sel);
     if (!el || !def) return;
-    el.innerHTML = `<div class="lq-legend-title">${escapeHtml(def.label)}</div>
+    el.innerHTML = `<div class="lq-legend-title">${escapeHtml(def.label)}${vintage
+      ? ` <small>· ${escapeHtml(vintage)}</small>` : ''}</div>
       <div class="lq-legend-bar">${HEAT_SOURCE.ramp.map((c) =>
         `<span style="background:${c}"></span>`).join('')}</div>
       <div class="lq-legend-cap"><span>${heatFmt(def, min)}${def.unit}</span>
@@ -1286,7 +1322,7 @@
   // viewport carries all 21 metrics and switching metrics is an instant
   // repaint. Concurrent paints (both maps) share the in-flight request.
   const heatCache = new Map(); // box key -> { promise, data }
-  const HEAT_ALL_FIELDS = ['sa2_name_2021'].concat(
+  const HEAT_ALL_FIELDS = ['sa2_name_2021', 'sa2_code_2021'].concat(
     [...new Set(HEAT_METRICS.flatMap((m) => m.fields || [m.key]))]).join(',');
   const heatBoxKey = (box) => box.map((v) => v.toFixed(3)).join(',');
 
@@ -1336,6 +1372,17 @@
     const def = heatMetricDef(metricKey);
     if (!def || !map) return;
     const seq = (ctl.seq = (ctl.seq || 0) + 1);
+    let snap = null;
+    if (def.dataset) {
+      snap = await heatRowsFor(def.dataset);
+      if (ctl.seq !== seq) return;
+      if (!snap) {
+        const el = $(ctl.legendSel);
+        if (el) el.innerHTML = '';
+        toast('Area dataset unavailable for this metric: ' + def.dataset);
+        return;
+      }
+    }
     const b = map.getBounds();
     const box = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
     heatLoadingInto(ctl.legendSel, def, box, true);
@@ -1351,10 +1398,12 @@
     }
     if (ctl.seq !== seq) return; // superseded by a newer metric/viewport paint
     const feats = (d.features || []).filter((f) => heatValue(def, f.properties) !== null);
-    if (!feats.length) { toast('No census data for this map area — zoom to an urban area'); return; }
+    if (!feats.length) { toast('No area data for this map area — zoom to an urban area'); return; }
     if (ctl.seq !== seq) return;
     const vals = feats.map((f) => heatValue(def, f.properties));
     const min = Math.min(...vals), max = Math.max(...vals);
+    const vint = snap ? (snap.vintage || {})[def.key]
+      || Object.values(snap.vintage || {})[0] || '' : '';
     if (ctl.layer) { map.removeLayer(ctl.layer); }
     ctl.layer = L.geoJSON(d, {
       filter: (f) => heatValue(def, f.properties) !== null,
@@ -1365,6 +1414,7 @@
         const v = heatValue(def, props);
         const line = `<strong>${escapeHtml(props.sa2_name_2021)}</strong><br>` +
           `${escapeHtml(def.label)}: <strong>${heatFmt(def, v)}${def.unit}</strong>` +
+          (vint ? ` <small>· ${escapeHtml(vint)}</small>` : '') +
           (def.note ? `<br><span style="color:#64748b">${escapeHtml(def.note)}</span>` : '');
         if (ctl.labels) {
           layer.bindTooltip(`<span class="heat-label">${heatFmt(def, v)}${def.unit}</span>`,
@@ -1375,7 +1425,7 @@
       },
     });
     ctl.layer.addTo(map);
-    heatLegendInto(ctl.legendSel, def, min, max);
+    heatLegendInto(ctl.legendSel, def, min, max, vint);
   }
 
   // ------------------------------------------------------------------
@@ -1496,8 +1546,10 @@
     return (lat !== null && lon !== null) ? { lat, lon, meta } : null;
   }
 
-  async function fetchDealCheck(lat, lon) {
-    return api(`/api/markets/census/point?lat=${lat}&lon=${lon}`);
+  async function fetchDealCheck(lat, lon, postcode) {
+    let q = `/api/markets/census/point?lat=${lat}&lon=${lon}`;
+    if (postcode) q += '&postcode=' + encodeURIComponent(postcode);
+    return api(q);
   }
 
   function dcSuburb() {
@@ -1573,6 +1625,7 @@
 
   function dcChip(m) {
     const bits = [];
+    if (m.vintage) bits.push(m.vintage);
     if (m.percentile != null) bits.push(dcOrdinal(m.percentile) + ' pct');
     const bm = dcNum(m.benchmark, m.dp);
     if (bm != null) bits.push((m.percentile != null ? 'median ' : 'suburb ')
@@ -1605,7 +1658,7 @@
           (drivers.for || []).length ? `For: ${escapeHtml(drivers.for.join(' · '))}` : '',
           (drivers.against || []).length ? `Against: ${escapeHtml(drivers.against.join(' · '))}` : '',
         ].filter(Boolean).join('</div><div class="dc-drivers">')}</div>` : '';
-    const groupHtml = [['area', 'The area — census fundamentals'],
+    const groupHtml = [['area', 'The area — fundamentals'],
                        ['deal', 'The deal — your numbers'],
                        ['market', 'The market — local evidence']].map(([g, label]) => {
       const list = (bundle.verdicts || []).filter((v) => v.group === g);
@@ -1653,9 +1706,9 @@
     let census = (dc.last && subj && dc.last.lat === subj.lat && dc.last.lon === subj.lon)
       ? dc.last.data : null;
     if (subj && !census) {
-      host.innerHTML = `<div class="heat-loading"><span class="heat-spin"></span>Scoring the area against the national census…</div>`;
+      host.innerHTML = `<div class="heat-loading"><span class="heat-spin"></span>Scoring the area against national data…</div>`;
       try {
-        census = await fetchDealCheck(subj.lat, subj.lon);
+        census = await fetchDealCheck(subj.lat, subj.lon, subj.meta && subj.meta.postcode);
       } catch (err) {
         host.innerHTML = `<div class="dc-empty">Deal check unavailable: ${escapeHtml(err.message)}</div>`;
         return;
@@ -5777,7 +5830,8 @@
     const lat = numOrNull(meta.lat), lon = numOrNull(meta.lon);
     let census = null;
     if (lat !== null && lon !== null) {
-      try { census = await fetchDealCheck(lat, lon); } catch (e) { census = null; }
+      try { census = await fetchDealCheck(lat, lon, meta.postcode); }
+      catch (e) { census = null; }
     }
     const suburbRow = (state.suburbs || []).find((s) => s.id === Number(inputs.suburbId)) || null;
     const suburb = await dcPriceBenchmark(meta, suburbRow);

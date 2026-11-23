@@ -32,7 +32,8 @@ node tests/test_engine.js                   # engine maths suite
 | `olf.py` | Open Land Fabric client (OGC Features, GeoJSON; SA/NT licence = national-cadastre-2026-10, redistribution with attribution OK) |
 | `daily_refresh.py` | Daemon at 03:00 local: force-refreshes state_intel for every located scenario address + resets the ABS SDMX cache (`PA_NO_SCHEDULER=1` disables; started only from `app.py __main__`) |
 | `qld_intel.py` / `vic_intel.py` | Deep QLD (QLD Globe) / VIC (Vicmap) intelligence |
-| `markets.py` / `census.py` / `sales.py` | ABS macro + median prices (with 1/3/5/10-yr growth windows), census SA2 benchmarks (24 fields, national + per-state percentiles, suburb→SA2 crosswalk), VIC VGO sold series |
+| `markets.py` / `census.py` / `sales.py` | ABS macro + median prices (with 1/3/5/10-yr growth windows), census SA2 benchmarks (national + per-state percentiles, suburb→SA2 crosswalk, Deal Check verdict engine), VIC VGO sold series |
+| `areastats.py` | Multi-vintage area datasets newer than the census — ABS Regional Population/ERP 2024-25 + age-sex 2024, DEWR SALM unemployment, ABS building approvals (all SA2), ATO 2023-24 income (postcode-keyed, exact match via addressMeta.postcode). Snapshot-first (`data/markets/sa2-<key>.json`, baked; runtime never fetches); `refresh()` staleness-gated from daily_refresh; `GET /api/markets/census/rows?key=` serves heat-map joins; census `_augmented_benchmarks` merges percentiles + per-field `meta` vintages. Deal Check employment verdict prefers SALM over census `lf_4` |
 | `admin.py` | `/api/admin/data-status` (BA role) — dataset freshness inventory |
 | `metric_history` table | daily suburb snapshots via daily_refresh; trends at `/api/suburbs/<id>/history` |
 | `report.py` | Client PDF (WeasyPrint) — `PDF_CSS`, `report_head_html`/`report_runners_html` shared with `portal.py` |

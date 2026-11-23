@@ -1946,11 +1946,11 @@ check("history endpoint responds", r.status_code == 200
 import census as _census
 rows = [
     {"sa2_code_2021": "101021001", "irsd_score": 950, "leed_4": 1, "dwell_7": 5,
-     "tenure_owned": 30.0, "hhtype_6": 2.4},
+     "tenure_owned": 30.0, "hhtype_6": 2.4, "lf_4": 6.2, "lf_5": 66.0},
     {"sa2_code_2021": "201021001", "irsd_score": 1000, "leed_4": 2, "dwell_7": 5,
-     "tenure_owned": 35.0, "hhtype_6": 2.5},
+     "tenure_owned": 35.0, "hhtype_6": 2.5, "lf_4": 5.2, "lf_5": 67.0},
     {"sa2_code_2021": "301021001", "irsd_score": 1050, "leed_4": 3, "dwell_7": 5,
-     "tenure_owned": 40.0, "hhtype_6": 2.6},
+     "tenure_owned": 40.0, "hhtype_6": 2.6, "lf_4": 4.2, "lf_5": 68.0},
 ]
 bench = _census.build_benchmarks(rows)
 check("census benchmarks keep national fields",
@@ -1979,6 +1979,82 @@ st_suburb = next(s for s in r.get_json()["data"] if s["id"] == stid2)
 check("suburb crosswalk resolves SA2 by name",
       st_suburb.get("sa2Code") == "101021001")
 _census._names_cache = {"data": None, "at": 0.0}
+
+# Multi-vintage area datasets (areastats) — snapshot-first loaders, benchmark
+# merge, SALM-preferring employment verdict, rows endpoint.
+import areastats as _area
+_area._cache["approvals"] = {"data": {
+    "asOf": "2026-11-23T00:00:00+00:00", "geo": "sa2",
+    "vintage": {"approvals_annual": "2022-23"}, "rows": {}}}
+_area._cache["salm"] = {"data": {
+    "asOf": "2026-11-23T00:00:00+00:00", "geo": "sa2",
+    "vintage": {"salm_unemp_rate": "Jun Q 2026"},
+    "rows": {"101021001": {"salm_unemp_rate": 4.1},
+             "201021001": {"salm_unemp_rate": 5.3}}}}
+_area._cache["erp"] = {"data": {
+    "asOf": "2026-11-23T00:00:00+00:00", "geo": "sa2",
+    "vintage": {"erp": "2024-25"},
+    "rows": {"101021001": {"erp_total": 2000.0, "erp_growth_1y_pct": 2.5,
+                           "erp_growth_5y_pct": 12.0, "nom_1y": 30.0,
+                           "median_age": 39.0, "age_0_14_pc": 16.0,
+                           "age_15_64_pc": 62.0, "age_65p_pc": 18.0}}}}
+_area._cache["ato"] = {"data": {
+    "asOf": "2026-11-23T00:00:00+00:00", "geo": "postcode",
+    "vintage": {"ato": "2023-24"},
+    "rows": {"4000": {"ato_median_income": 62000.0, "ato_avg_income": 81000.0,
+                      "ato_taxpayers": 15000.0, "ato_landlord_pc": 22.5,
+                      "ato_median_net_rent": -3000.0}}}}
+
+check("areastats snapshot loaders honour stuffed cache",
+      (_area.sa2_values("101021001").get("salm_unemp_rate") == 4.1
+       and _area.sa2_values("101021001").get("erp_total") == 2000.0))
+check("areastats postcode lookup matches exactly",
+      _area.postcode_values("4000").get("ato_median_income") == 62000.0
+      and _area.postcode_values("9999") == {})
+check("areastats benchmark rows attach SA2 codes",
+      all("sa2_code_2021" in r for r in _area.benchmark_rows())
+      and len(_area.benchmark_rows()) == 3)
+
+_aug = _census._augmented_benchmarks(dict(bench))
+check("augmented benchmarks percentile the newer fields",
+      round(_aug["fields"]["salm_unemp_rate"]["p50"], 6) == 4.7
+      and _aug["fields"]["erp_total"]["p50"] == 2000.0
+      and _aug["fields"]["irsd_score"]["p50"] == 1000)
+check("augmented benchmarks carry meta with vintages",
+      _aug["meta"]["salm_unemp_rate"]["vintage"] == "Jun Q 2026"
+      and _aug["meta"]["irsd_score"]["vintage"] == "2021 Census"
+      and _aug["meta"]["ato_median_income"]["source"].startswith("ATO"))
+
+_vres, _ = _census.deal_verdicts({"lf_4": 6.2, "lf_5": 66.0,
+                                  "salm_unemp_rate": 4.1}, _aug)
+_emp = next(v for v in _vres if v["key"] == "employment")
+_schip = _emp["metrics"][0]
+check("employment verdict prefers SALM unemployment",
+      _schip["key"] == "salm_unemp_rate" and _schip["value"] == 4.1
+      and _schip.get("vintage") == "Jun Q 2026")
+_vres2, _ = _census.deal_verdicts({"lf_4": 6.2, "lf_5": 66.0}, _aug)
+_emp2 = next(v for v in _vres2 if v["key"] == "employment")
+check("employment falls back to census lf_4 without SALM",
+      _emp2["metrics"][0]["key"] == "lf_4")
+check("verdict count unchanged (9 + overall shape)",
+      len(_vres) == 9)
+
+r = c.get("/api/markets/census/rows?key=salm")
+rdata = r.get_json()["data"]
+check("rows endpoint serves a dataset snapshot",
+      r.status_code == 200 and rdata["key"] == "salm"
+      and rdata["rows"]["101021001"]["salm_unemp_rate"] == 4.1
+      and rdata["vintage"]["salm_unemp_rate"] == "Jun Q 2026")
+check("rows endpoint rejects unknown keys",
+      c.get("/api/markets/census/rows?key=nonsense").status_code == 400)
+
+# admin data-status now lists the area datasets
+r = c.get("/api/admin/data-status", headers=BA)
+_area_names = [d["dataset"] for d in r.get_json()["data"]["datasets"]]
+check("data-status lists area dataset snapshots",
+      any("Regional Population" in n for n in _area_names)
+      and any("SALM" in n for n in _area_names))
+_area._cache = {key: {"data": None} for key in _area.DATASETS}
 
 # data-status endpoint
 r = c.get("/api/admin/data-status", headers=BA)
@@ -2173,8 +2249,14 @@ _html = report_mod.build_report_html(_dc_payload, {})
 check("report PDF includes the grouped deal check section",
       "Deal check &amp; recommendation" in _html and "PASS" in _html
       and "Will landlords find tenants easily?" in _html
-      and "The area — census fundamentals" in _html
-      and "The deal — your numbers" in _html)
+      and "The area — fundamentals" in _html
+      and "The deal — your numbers" in _html
+      and "ABS 2021 Census" in _html)  # fallback source stamp when none posted
+check("report PDF deal check names the posted source stamp",
+      "Area data:" in report_mod.build_report_html(
+          dict(_dc_payload,
+               dealCheck=dict(_dc_payload["dealCheck"],
+                              source="ABS 2021 Census · DEWR SALM Jun Q 2026")), {}))
 check("report PDF omits the section when dealCheck absent",
       "Deal check &amp; recommendation" not in report_mod.build_report_html(
           {"title": "t", "years": []}, {}))

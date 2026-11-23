@@ -999,7 +999,9 @@
     const lat = Number(meta.lat), lon = Number(meta.lon);
     const [census, growth] = await Promise.all([
       Number.isFinite(lat) && Number.isFinite(lon)
-        ? api(`/api/markets/census/point?lat=${lat}&lon=${lon}`).catch(() => null)
+        ? api(`/api/markets/census/point?lat=${lat}&lon=${lon}` +
+              (meta.postcode ? '&postcode=' + encodeURIComponent(meta.postcode) : ''))
+            .catch(() => null)
         : Promise.resolve(null),
       st ? api(`/api/markets/prices?state=${encodeURIComponent(st)}`)
            .then((d) => window.PropertyAnalyserEngine.stateGrowth5yr(d, st)).catch(() => null)
@@ -1028,14 +1030,15 @@
         </div>
         <div class="dc-banner-score">${bundle.overall.score != null ? bundle.overall.score : '—'}<small>/100</small></div>
       </div>
-      ${[['area', 'The area — census fundamentals'], ['deal', 'The deal — your numbers'],
+      ${[['area', 'The area — fundamentals'], ['deal', 'The deal — your numbers'],
          ['market', 'The market — local evidence']].map(([g, label]) => {
         const list = (bundle.verdicts || []).filter((v) => v.group === g);
         if (!list.length) return '';
         return `<div class="chip-row-label">${escapeHtml(label)}</div>
           <div class="dc-grid">${list.map(dcCardHtml).join('')}</div>`;
       }).join('')}
-      <div class="source-note">Scored automatically from ABS census data, the numbers in this proposal and the agent's local evidence. Percentiles compare the area with all of Australia. An indication only — not financial advice.</div>`;
+      <div class="source-note">${escapeHtml(bundle.source
+        || 'Scored automatically from ABS area data, the numbers in this proposal and the agent\'s local evidence')}. Percentiles compare the area with all of Australia. An indication only — not financial advice.</div>`;
     sec.classList.remove('hidden');
   }
 
