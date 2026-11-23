@@ -37,6 +37,10 @@
     bankRates: [],       // investor rate rows from /api/bank-rates
     comps: [],           // comparable sales for the current scenario
     compCandidates: [],  // AI search results pending review (never persisted)
+    rentalCandidates: [],  // AI rental-evidence results pending review (never persisted)
+    aiRateCandidates: [],  // AI-suggested bank rates pending review (never persisted)
+    listingCheck: null,  // transient AI listing-check result for this session
+    areaSignals: null,  // transient AI infrastructure signals for this session
   };
 
   // Drafts are per user so two people on one browser don't clobber
@@ -327,6 +331,29 @@
     return parts.join('');
   }
 
+  // Normalise for "is this the same address" checks (spacing/punctuation).
+  const normAddr = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  // Auto-pick the top suggestion as soon as it strongly matches what is
+  // typed — no click needed. A weak match leaves the dropdown for the user
+  // to choose from, and picking the same address twice is a no-op.
+  function autoPick(picker, q) {
+    const nq = normAddr(q);
+    if (!picker.items.length || nq.length < 8) return;
+    const top = picker.items[0];
+    const na = normAddr(top.address);
+    if (!na.startsWith(nq) && !na.includes(nq)) return;
+    if (picker.lastAuto === top.address) return;
+    picker.lastAuto = top.address;
+    if (picker.onPick) {
+      picker.onPick.chosen(top, true);
+      hideSuggest(picker.dd);
+    } else {
+      picker.input.value = top.address;
+      hideSuggest(picker.dd);
+    }
+  }
+
   async function fetchSuggest(picker, q) {
     const seq = ++suggestSeq;
     try {
@@ -334,6 +361,7 @@
       if (seq !== suggestSeq) return; // a newer keystroke already won
       picker.items = items || [];
       renderSuggest(picker.dd, picker.items);
+      autoPick(picker, q);
     } catch (err) {
       if (seq !== suggestSeq) return;
       showSuggest(picker.dd, '<div class="addr-hint">' + escapeHtml(err.message) + '</div>');
@@ -413,16 +441,17 @@
     }
   }
 
-  function pickPropertyAddress(item) {
+  function pickPropertyAddress(item, auto) {
     $('#address-input').value = item.address; // programmatic — fires no input event
     scopeSet('address', item.address);
     scopeSet('addressMeta', metaFrom(item));
     setMatched('#address-matched', item);
+    refreshAiResearchRow();
     const m = matchSuburb(item.suburb, item.postcode);
     if (m) {
       state.inputs.suburbId = m.id; // suburb stays portfolio-level (drives the area report)
       $('#suburb-select').value = String(m.id);
-      toast(`Suburb set to ${m.name} — applies to the whole portfolio`);
+      if (!auto) toast(`Suburb set to ${m.name} — applies to the whole portfolio`);
     } else if (item.suburb) {
       toast(`${item.suburb} ${item.postcode} is not in your suburb data — add it under Area Report`);
     }
@@ -469,6 +498,7 @@
         scopeSet('addressMeta', metaFrom(item));
         setMatched('#address-matched', item);
         scheduleRecalc(); // the resolved point has to be saved
+        refreshAiResearchRow();
         if (propertySectionVisible()) renderProperty();
       },
     },
@@ -610,7 +640,13 @@
   }
 
   function renderPortfolio(items) {
-    const owned = items.filter((i) => i.ownershipStatus === 'purchased');
+    const whatIf = localStorage.getItem('pa_pfo_whatif') === '1';
+    const tgl = $('#pfo-whatif');
+    if (tgl && tgl.checked !== whatIf) tgl.checked = whatIf;
+    const statusLabel = Object.fromEntries(PFO_STATUSES);
+    const owned = whatIf ? items.slice() : items.filter((i) => i.ownershipStatus === 'purchased');
+    const nPurchased = owned.filter((i) => i.ownershipStatus === 'purchased').length;
+    const nProspective = owned.length - nPurchased;
     const calcs = owned.map((item) => ({ item, r: E.calculateAll(item.inputs) }));
     const totalValue = calcs.reduce((s, c) => s + (c.r.metrics.purchasePrice || 0), 0);
     const totalDebt = calcs.reduce((s, c) => s + (c.r.metrics.ipLoanAmount || 0), 0);
@@ -618,14 +654,15 @@
     const usableEquity = Math.max(0, totalValue * 0.8 - totalDebt);
     const outright = calcs.filter((c) => (c.r.metrics.ipLoanAmount || 0) <= 1000).length;
     const weekly = calcs.reduce((s, c) => s + ((c.r.rows[0] || {}).afterTaxCashFlow || 0), 0) / 52;
+    const splitNote = nPurchased + ' purchased' + (nProspective ? ' + ' + nProspective + ' prospective' : '');
 
     const cards = [
-      ['Total property value', totalValue ? fmtMoney(totalValue) : '—', owned.length + ' purchased propert' + (owned.length === 1 ? 'y' : 'ies'), 'blue'],
-      ['Total debt', calcs.length ? fmtMoney(totalDebt) : '—', 'Across all loans', 'violet'],
-      ['Net worth', calcs.length ? fmtMoney(netWorth) : '—', 'Value less debt', 'green'],
+      ['Total property value', totalValue ? fmtMoney(totalValue) : '—', splitNote + ' propert' + (owned.length === 1 ? 'y' : 'ies'), 'blue'],
+      ['Total debt', calcs.length ? fmtMoney(totalDebt) : '—', whatIf ? 'Across all included loans' : 'Across all loans', 'violet'],
+      ['Net worth', calcs.length ? fmtMoney(netWorth) : '—', 'Value less debt' + (whatIf ? ' (what-if)' : ''), 'green'],
       ['Usable equity', calcs.length ? fmtMoney(usableEquity) : '—', '80% of value less debt', 'amber'],
       ['Owned outright', calcs.length ? Math.round(outright / calcs.length * 100) + '%' : '—', outright + ' of ' + calcs.length + ' debt-free', 'teal'],
-      ['Weekly position', calcs.length ? fmtMoney(Math.abs(weekly)) + (weekly > 0 ? ' out' : ' surplus') : '—', 'After tax, year 1 combined', weekly > 0 ? 'bad' : 'good'],
+      ['Weekly position', calcs.length ? fmtMoney(Math.abs(weekly)) + (weekly > 0 ? ' out' : ' surplus') : '—', 'After tax, year 1 combined' + (whatIf ? ' (what-if)' : ''), weekly > 0 ? 'bad' : 'good'],
     ];
     $('#pfo-stats').innerHTML = cards.map((x) =>
       '<div class="portfolio-kpi ' + x[3] + '"><div class="portfolio-kpi-label">' + escapeHtml(x[0]) + '</div>' +
@@ -654,14 +691,24 @@
     });
 
     // Own & owe table
+    const chartHint = $('#pfo-chart-hint');
+    if (chartHint) chartHint.textContent = whatIf
+      ? "Today's position, then every included property projected together (what-if on)."
+      : "Today's position, then every purchased property projected together.";
+    const tableHint = $('#pfo-table-hint');
+    if (tableHint) tableHint.textContent = whatIf
+      ? 'Year-one figures for each included property — badges mark the prospective ones.'
+      : "Year-one figures for each purchased property, from its saved scenario.";
     $('#pfo-table').innerHTML = `
       <thead><tr><th>Property</th><th>Price</th><th>Loan</th><th>Equity</th>
       <th>Yr-1 cash flow</th><th>Gross yield</th></tr></thead><tbody>
       ${calcs.map((c) => {
         const p = (c.item.inputs.properties || [{}])[0];
         const m = c.r.metrics;
+        const chip = whatIf
+          ? ` <span class="status-chip ${escapeHtml(c.item.ownershipStatus || 'considering')}">${escapeHtml(statusLabel[c.item.ownershipStatus] || 'Considering')}</span>` : '';
         return `<tr>
-          <td>${escapeHtml(c.item.name)}</td>
+          <td>${escapeHtml(c.item.name)}${chip}</td>
           <td>${fmtMoney(p.purchasePrice || 0)}</td>
           <td>${fmtMoney(m.ipLoanAmount || 0)}</td>
           <td>${fmtMoney((p.purchasePrice || 0) - (m.ipLoanAmount || 0))}</td>
@@ -702,6 +749,11 @@
     } catch (err) { toast('Error: ' + err.message); }
   });
 
+  $('#pfo-whatif').addEventListener('change', (ev) => {
+    localStorage.setItem('pa_pfo_whatif', ev.target.checked ? '1' : '0');
+    if (pfoCache) renderPortfolio(pfoCache);
+  });
+
   // ------------------------------------------------------------------
   // Markets — ABS macro stats
   // ------------------------------------------------------------------
@@ -729,7 +781,8 @@
         return '<div class="card"><div class="label">' + escapeHtml(MK_LABELS[k]) + '</div>' +
           '<div class="value">' + escapeHtml(val) + '</div>' +
           '<div class="card-sub">' + escapeHtml(n.label) +
-          (n.live ? ' · <strong>live ABS</strong>' : ' · bundled snapshot') + '</div></div>';
+          (n.live ? ' · <strong>' + (n.liveVia ? 'live via ' + escapeHtml(n.liveVia) : 'live ABS') + '</strong>'
+                 : ' · bundled snapshot') + '</div></div>';
       }).join('') ||
       '<div class="empty-note">National market data is not loaded.</div>';
 
@@ -1008,6 +1061,24 @@
       make: () => arcgisDynamic('https://spatial-gis.information.qld.gov.au/arcgis/rest/services/Boundaries/AdministrativeBoundaries/MapServer', { opacity: 0.35 }) },
     { group: 'Infrastructure', key: 'vic-power', label: 'Electricity distributors (VIC)',
       make: () => wmsLayer(VIC_WMS, 'open-data-platform:electricity_distributor') },
+    { group: 'Hazards', key: 'wa-bushfire', label: 'Bushfire prone (WA)',
+      make: () => arcgisDynamic('https://services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Bush_Fire_Prone_Areas/MapServer') },
+    { group: 'Hazards', key: 'nsw-bushfire', label: 'Bushfire prone (NSW)',
+      make: () => arcgisDynamic('https://portal.spatial.nsw.gov.au/server/rest/services/Hosted/NSW_BushFire_Prone_Land/MapServer') },
+    { group: 'Hazards', key: 'vic-flood', label: 'Flood history (VIC)',
+      make: () => wmsLayer(VIC_WMS, 'open-data-platform:vic_flood_history_public', { opacity: 0.55 }) },
+    { group: 'Hazards', key: 'tas-flood', label: 'Flood hazard mapping (TAS)',
+      make: () => arcgisDynamic('https://services.thelist.tas.gov.au/arcgis/rest/services/Public/SES_FloodMapping/MapServer', { layers: 'show:10', opacity: 0.55 }) },
+    { group: 'Planning', key: 'tas-zones', label: 'Planning scheme zones (TAS)',
+      make: () => arcgisDynamic('https://services.thelist.tas.gov.au/arcgis/rest/services/Public/PlanningOnline/MapServer', { layers: 'show:13', opacity: 0.5 }) },
+    { group: 'Planning', key: 'wa-zones', label: 'Region scheme zones (WA)',
+      make: () => arcgisDynamic('https://services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Property_and_Planning/MapServer', { layers: 'show:48', opacity: 0.5 }) },
+    { group: 'Boundaries', key: 'nsw-parcels', label: 'Land parcels (NSW)',
+      make: () => arcgisDynamic('https://portal.spatial.nsw.gov.au/server/rest/services/NSW_Land_Parcel_Property_Theme/MapServer', { opacity: 0.5 }) },
+    { group: 'Boundaries', key: 'tas-parcels', label: 'Cadastral parcels (TAS)',
+      make: () => arcgisDynamic('https://services.thelist.tas.gov.au/arcgis/rest/services/Public/CadastreAndAdministrative/MapServer', { opacity: 0.5 }) },
+    { group: 'Boundaries', key: 'sa-basemap', label: 'SA base layers (topographic)',
+      make: () => arcgisDynamic('https://maps.sa.gov.au/arcgis/rest/services/BaseMaps/Topographic_wmas/MapServer', { opacity: 0.5 }) },
   ];
 
   const lq = { map: null, basemap: null, hybridLabels: null, layers: {}, myData: null };
@@ -1019,8 +1090,10 @@
   }
 
   // ArcGIS MapServer → Leaflet: each tile becomes an export-image request
-  // with the tile's bbox (Web Mercator → EPSG:4326).
+  // with the tile's bbox (Web Mercator → EPSG:4326). opts.layers (an ArcGIS
+  // "show:id" spec) restricts the export to specific layers.
   function arcgisDynamic(serviceUrl, opts) {
+    const layersParam = opts && opts.layers ? `&layers=${opts.layers}` : '';
     const Arc = L.TileLayer.extend({
       getTileUrl(coords) {
         const n = Math.pow(2, coords.z);
@@ -1029,7 +1102,8 @@
         const latOf = (y) => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI;
         return serviceUrl + '/export?' +
           `bbox=${lonMin},${latOf(coords.y + 1)},${lonMax},${latOf(coords.y)}` +
-          '&bboxSR=4326&size=256,256&format=png32&transparent=true&f=image';
+          '&bboxSR=4326&size=256,256&format=png32&transparent=true&f=image' +
+          layersParam;
       },
     });
     return new Arc(serviceUrl + '/export', Object.assign({
@@ -1321,9 +1395,22 @@
     return groups;
   }
 
+  // Heat-map address search: fly the map to the located point + drop a pin.
+  function heatFlyTo(lat, lon, label) {
+    if (!hm.map) { initHeatMapsPage(); }
+    if (!hm.map) return;
+    const flon = numOrNull(lon), flat = numOrNull(lat);
+    if (flon === null || flat === null) return;
+    if (hm.marker) hm.map.removeLayer(hm.marker);
+    hm.marker = L.marker([flat, flon]).addTo(hm.map)
+      .bindPopup(escapeHtml(label || 'Selected address')).openPopup();
+    hm.map.flyTo([flat, flon], 13, { duration: 0.8 });
+  }
+
   function initHeatMapsPage() {
     if (!L) { toast('Map library not loaded'); return; }
     if (!hm.map) {
+      hm.marker = null;
       hm.map = L.map('hm-map', { zoomControl: true }).setView([-25.5, 134.5], 4);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
         { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(hm.map);
@@ -1341,6 +1428,21 @@
       const meta = activePropertyIndex() != null
         ? (state.inputs.properties[activePropertyIndex()] || {}).addressMeta : null;
       if (meta && numOrNull(meta.lat) !== null) hm.map.setView([meta.lat, meta.lon], 12);
+      wireAddressPicker({
+        inputSel: '#hm-address-input',
+        dropdownSel: '#hm-addr-dropdown',
+        scope: 'property',
+        onPick: {
+          located: (item) => {
+            setMatched('#hm-address-matched', item);
+            heatFlyTo(item.lat, item.lon, item.address);
+          },
+          chosen: (item) => {
+            setMatched('#hm-address-matched', item);
+            heatFlyTo(item.lat, item.lon, item.address);
+          },
+        },
+      });
       $('#hm-groups').innerHTML = heatGroupOptions().map((g) =>
         `<div class="chip-row-label">${escapeHtml(g.group)}</div>
          <div class="chip-row">${g.items.map((m) =>
@@ -1757,7 +1859,7 @@
   // Dashboard — the portfolio at a glance
   // ------------------------------------------------------------------
 
-  const dash = { items: [], busy: false, details: new Map() };
+  const dash = { items: [], busy: false, details: new Map(), focus: null };
 
   const ICONS = {
     home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12.5 12 4l9 8.5"/><path d="M6 11v8h12v-8"/></svg>',
@@ -2056,9 +2158,9 @@
     const lat = numOrNull(meta.lat), lon = numOrNull(meta.lon);
     if (lat === null || lon === null) return;
     intel.loadingKeys.add(key);
-    const jurisdiction = String(meta.state || state.inputs.state || '').toUpperCase();
-    const isVic = jurisdiction === 'VIC' || jurisdiction === 'VICTORIA';
-    api((isVic ? '/api/intel/vic-property' : '/api/intel/property') + '?lat=' + lat + '&lon=' + lon)
+    const jurisdiction = String(meta.state || state.inputs.state || '').toUpperCase()
+      .replace('VICTORIA', 'VIC').replace('QUEENSLAND', 'QLD');
+    api(intelEndpoint(jurisdiction) + 'lat=' + lat + '&lon=' + lon)
       .then((data) => {
         intel.cache[key] = data;
         delete intel.loadErrors[key];
@@ -2072,7 +2174,81 @@
       .finally(() => { intel.loadingKeys.delete(key); });
   }
 
+  // Focus slot — drag a research card here (or hit Focus) to feature it.
+  function dashFocusItem() {
+    const f = dash.focus;
+    if (!f) return null;
+    return dash.items.find((x) =>
+      String(x.scenarioId) === String(f.scenarioId) && Number(x.index) === Number(f.index)) || null;
+  }
+
+  function renderDashFocus() {
+    const el = $('#dash-focus');
+    if (!el) return;
+    const it = dashFocusItem();
+    if (dash.focus && !it) { dash.focus = null; localStorage.removeItem('pa_dash_focus'); }
+    syncFocusCardClasses();
+    if (!it) {
+      el.classList.remove('is-set');
+      el.innerHTML = '<div class="dash-focus-empty">Drag a property here — or hit <b>Focus</b> on a card — to feature it.</div>';
+      return;
+    }
+    el.classList.add('is-set');
+    el.innerHTML = `
+      <div class="dash-focus-head">
+        <span class="prop-pin">${dashIcon('pin')}</span>
+        <div class="dash-focus-title">
+          <div class="prop-addr">${escapeHtml(it.address || it.scenarioName)}</div>
+          <div class="prop-sub">${escapeHtml([it.suburb, it.scenarioName].filter(Boolean).join(' · '))}</div>
+        </div>
+        <button class="icon-btn" data-dash-focus-clear title="Clear focus">&times;</button>
+      </div>
+      <div class="dash-focus-body">
+        ${scoreRing(it.score)}
+        <div class="prop-stats">
+          <div class="prop-stat"><div class="k">Purchase price</div><div class="v">${fmtMoney(it.price)}</div></div>
+          <div class="prop-stat"><div class="k">Gross yield</div><div class="v">${it.grossYield === null || it.grossYield === undefined ? '—' : fmtPct(it.grossYield, 2)}</div></div>
+          <div class="prop-stat"><div class="k">Weekly position</div><div class="v">${it.weekly === null || it.weekly === undefined ? '—' : (it.weekly > 0 ? 'Out of pocket ' + fmtMoney(it.weekly) : it.weekly < 0 ? 'Surplus ' + fmtMoney(Math.abs(it.weekly)) : 'Break-even')}</div></div>
+          <div class="prop-stat"><div class="k">10-yr equity</div><div class="v">${it.equity === null || it.equity === undefined ? '—' : fmtMoney(it.equity)}</div></div>
+        </div>
+        <div class="prop-card-actions">
+          <button data-dash-load="${it.scenarioId}">Open</button>
+          <button class="primary" data-dash-property="${it.scenarioId}" data-dash-index="${it.index}">Analyse</button>
+        </div>
+      </div>`;
+  }
+
+  function setDashFocus(sid, idx) {
+    const it = dash.items.find((x) =>
+      String(x.scenarioId) === String(sid) && Number(x.index) === Number(idx));
+    if (!it) { toast('That property is no longer in your research list'); return; }
+    dash.focus = { scenarioId: it.scenarioId, index: it.index };
+    localStorage.setItem('pa_dash_focus', JSON.stringify(dash.focus));
+    renderDashFocus();
+  }
+
+  function clearDashFocus() {
+    dash.focus = null;
+    localStorage.removeItem('pa_dash_focus');
+    renderDashFocus();
+  }
+
+  function syncFocusCardClasses() {
+    document.querySelectorAll('#dash-props .prop-card').forEach((card) => {
+      const on = dash.focus
+        && String(card.dataset.dragScenario) === String(dash.focus.scenarioId)
+        && Number(card.dataset.dragIndex) === Number(dash.focus.index);
+      card.classList.toggle('is-focused', !!on);
+    });
+  }
+
   function renderDashboard(list) {
+    if (!dash.focus) {
+      try {
+        const f = JSON.parse(localStorage.getItem('pa_dash_focus') || 'null');
+        if (f && f.scenarioId !== undefined && f.index !== undefined) dash.focus = f;
+      } catch (e) { dash.focus = null; }
+    }
     const items = dash.items;
     const scored = items.filter((i) => i.score !== null && i.score !== undefined);
     const avg = scored.length
@@ -2148,7 +2324,7 @@
 
     // ---- property cards ----
     $('#dash-props').innerHTML = items.map((it, i) => `
-      <div class="prop-card">
+      <div class="prop-card" draggable="true" data-drag-scenario="${it.scenarioId}" data-drag-index="${it.index}">
         <div class="prop-hero ${i % 3 === 1 ? 'alt' : i % 3 === 2 ? 'deep' : ''}">
           <span class="prop-pin">${dashIcon('pin')}</span>
           <div class="prop-addr">${escapeHtml(it.address || it.scenarioName)}</div>
@@ -2171,6 +2347,7 @@
           </div>
           <div class="prop-card-actions">
             <button data-dash-load="${it.scenarioId}">Open</button>
+            <button data-dash-focus="${it.scenarioId}" data-dash-index="${it.index}">Focus</button>
             <button class="primary" data-dash-property="${it.scenarioId}" data-dash-index="${it.index}">Analyse</button>
           </div>
         </div>
@@ -2199,6 +2376,7 @@
       },
       options: baseOpts((v) => fmtNum(v)),
     });
+    renderDashFocus();
     renderPortfolioSnapshot();
   }
 
@@ -2247,8 +2425,35 @@
           const a = document.querySelector('#nav a[data-target="property"]');
           if (a) a.click();
         });
+        return;
       }
+      const foc = ev.target.closest('[data-dash-focus]');
+      if (foc) { setDashFocus(foc.dataset.dashFocus, foc.dataset.dashIndex); return; }
+      if (ev.target.closest('[data-dash-focus-clear]')) { clearDashFocus(); return; }
     });
+
+    // Focus-slot drag & drop (native HTML5 DnD, no library).
+    document.addEventListener('dragstart', (ev) => {
+      const card = ev.target.closest ? ev.target.closest('.prop-card[data-drag-scenario]') : null;
+      if (!card) return;
+      ev.dataTransfer.setData('text/plain', card.dataset.dragScenario + ':' + card.dataset.dragIndex);
+      ev.dataTransfer.effectAllowed = 'copy';
+      card.classList.add('dragging');
+    });
+    document.addEventListener('dragend', () => {
+      document.querySelectorAll('.prop-card.dragging').forEach((c) => c.classList.remove('dragging'));
+    });
+    const focusZone = $('#dash-focus');
+    if (focusZone) {
+      focusZone.addEventListener('dragover', (ev) => { ev.preventDefault(); focusZone.classList.add('drop-hover'); });
+      focusZone.addEventListener('dragleave', () => focusZone.classList.remove('drop-hover'));
+      focusZone.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        focusZone.classList.remove('drop-hover');
+        const parts = String(ev.dataTransfer.getData('text/plain') || '').split(':');
+        if (parts[0]) setDashFocus(parts[0], parts[1] === undefined ? 0 : parts[1]);
+      });
+    }
   }
 
   // ------------------------------------------------------------------
@@ -2297,10 +2502,48 @@
       }
       return intel.bushfireVic;
     }
+    if (intel.bushfireKind === 'wa') {
+      if (!intel.bushfireWa) {
+        intel.bushfireWa = arcgisDynamic(
+          'https://services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Bush_Fire_Prone_Areas/MapServer',
+          { opacity: 0.45 });
+      }
+      return intel.bushfireWa;
+    }
+    if (intel.bushfireKind === 'nsw') {
+      if (!intel.bushfireNsw) {
+        intel.bushfireNsw = arcgisDynamic(
+          'https://portal.spatial.nsw.gov.au/server/rest/services/Hosted/NSW_BushFire_Prone_Land/MapServer',
+          { opacity: 0.45 });
+      }
+      return intel.bushfireNsw;
+    }
     if (!intel.bushfire) {
       intel.bushfire = L.tileLayer(BUSHFIRE_TILES, { maxZoom: 19, opacity: 0.45 });
     }
     return intel.bushfire;
+  }
+
+  // TAS/VIC flood overlays are state tile layers; QLD uses the intel.flood
+  // group of study polygons, so a null here means "use the group".
+  function floodLayer() {
+    if (!window.L) return null;
+    if (intel.floodKind === 'vic') {
+      if (!intel.floodVic) {
+        intel.floodVic = wmsLayer('https://opendata.maps.vic.gov.au/geoserver/wms',
+          'open-data-platform:vic_flood_history_public', { opacity: 0.55 });
+      }
+      return intel.floodVic;
+    }
+    if (intel.floodKind === 'tas') {
+      if (!intel.floodTas) {
+        intel.floodTas = arcgisDynamic(
+          'https://services.thelist.tas.gov.au/arcgis/rest/services/Public/SES_FloodMapping/MapServer',
+          { layers: 'show:10', opacity: 0.55 });
+      }
+      return intel.floodTas;
+    }
+    return null;
   }
 
   function numOrNull(v) {
@@ -2447,23 +2690,38 @@
     if (!el) return;
     const suburb = String((meta && meta.suburb) || '').trim();
     const st = String((meta && meta.state) || state.inputs.state || '').toUpperCase();
-    if (!suburb || st !== 'VIC') { el.innerHTML = ''; return; }
-    const key = st + ':' + suburb.toLowerCase();
+    const postcode = String((meta && meta.postcode) || '').trim();
+    if (!suburb || !st) { el.innerHTML = ''; return; }
+    const key = st + ':' + suburb.toLowerCase() + ':' + postcode;
     if (valGuideCache[key] === undefined) {
       try {
         valGuideCache[key] = await api('/api/valuation?suburb='
-          + encodeURIComponent(suburb) + '&state=' + st);
+          + encodeURIComponent(suburb) + '&state=' + st
+          + (postcode ? '&postcode=' + encodeURIComponent(postcode) : ''));
       } catch (err) { valGuideCache[key] = null; }
     }
     const d = valGuideCache[key];
     if (!d || !d.available || !d.latest) { el.innerHTML = ''; return; }
     const l = d.latest, g = d.guide;
+    const hasSeries = Object.keys(d.series || {}).length > 0;
+    const medianLabel = hasSeries
+      ? 'Sold median — ' + escapeHtml(l.dwellingType || 'houses')
+      : 'Median — suburb record';
+    const sourceLabel = escapeHtml((l.period || '') + ' · '
+      + (d.source || (hasSeries ? 'VIC Valuer-General' : 'suburb record — refresh with AI suburb evidence')));
     el.innerHTML = '<div class="cards">'
-      + card('Sold median — ' + escapeHtml(l.dwellingType), fmtMoney(l.median),
-             escapeHtml((l.period || '') + ' · ' + (d.source || 'VIC Valuer-General')))
+      + card(medianLabel, fmtMoney(l.median), sourceLabel)
       + (g ? card('Indicative range', fmtMoney(g.low) + ' – ' + fmtMoney(g.high),
-                  'Suburb median ±10% — a guide from sold data, not a valuation') : '')
+                  'Suburb median ±10% — a guide, not a valuation') : '')
       + '</div>';
+  }
+
+  // QLD intel endpoint doubles as the default for unset states; the six
+  // remaining jurisdictions route to state_intel.
+  function intelEndpoint(jurisdiction) {
+    if (jurisdiction === 'VIC') return '/api/intel/vic-property';
+    if (!jurisdiction || jurisdiction === 'QLD') return '/api/intel/property';
+    return '/api/intel/state-property?state=' + encodeURIComponent(jurisdiction) + '&';
   }
 
   function renderProperty() {
@@ -2503,11 +2761,13 @@
       return;
     }
 
-    const jurisdiction = String(meta.state || state.inputs.state || '').toUpperCase();
-    const isVic = jurisdiction === 'VIC' || jurisdiction === 'VICTORIA';
-    setPropertyStatus(isVic ? 'Loading Victorian Government property data…' : 'Loading live Queensland data…');
+    const jurisdiction = String(meta.state || state.inputs.state || '').toUpperCase()
+      .replace('VICTORIA', 'VIC').replace('QUEENSLAND', 'QLD');
+    setPropertyStatus(jurisdiction === 'VIC' ? 'Loading Victorian Government property data…'
+      : (!jurisdiction || jurisdiction === 'QLD') ? 'Loading live Queensland data…'
+      : `Loading ${jurisdiction} Government property data…`);
     const seq = ++intel.seq;
-    api((isVic ? '/api/intel/vic-property' : '/api/intel/property') + '?lat=' + lat + '&lon=' + lon)
+    api(intelEndpoint(jurisdiction) + 'lat=' + lat + '&lon=' + lon)
       .then((d) => {
         if (seq !== intel.seq) return;
         const keys = Object.keys(intel.cache);
@@ -2517,6 +2777,12 @@
       })
       .catch((err) => {
         if (seq !== intel.seq) return;
+        if (jurisdiction !== 'VIC' && jurisdiction !== 'QLD'
+            && /not found|bad JSON/.test(err.message)) {
+          // new frontend + old server process: state-property route missing
+          setPropertyStatus(`${jurisdiction} intelligence needs a server restart to activate — restart the Flask app and reload.`);
+          return;
+        }
         setPropertyStatus('Could not load property data: ' + err.message);
       });
   }
@@ -2544,14 +2810,18 @@
 
   function renderVicIntel(d) {
     intel.bushfireKind = 'vic';
-    ['#prop-ov-flood', '#prop-base-topo'].forEach((sel) => {
-      const el = $(sel);
-      if (el) el.classList.add('hidden');
-    });
+    intel.floodKind = 'vic';
+    const topoEl = $('#prop-base-topo');
+    if (topoEl) topoEl.classList.add('hidden');
     const bfChip = $('#prop-ov-bushfire');
     if (bfChip) {
       bfChip.classList.remove('hidden');
       bfChip.textContent = 'Bushfire prone (VIC)';
+    }
+    const flChip = $('#prop-ov-flood');
+    if (flChip) {
+      flChip.classList.remove('hidden');
+      flChip.textContent = 'Flood history (VIC)';
     }
     const p = d.parcel || {};
     const area = p.areaSqm ? fmtNum(p.areaSqm) + ' m²' : 'Not available';
@@ -2581,6 +2851,98 @@
     renderIntelMap(d);
   }
 
+  const STATE_INTEL_JURISDICTIONS = new Set(['NSW', 'ACT', 'TAS', 'WA', 'SA', 'NT']);
+
+  // Generic renderer for the six state_intel jurisdictions. Parcel cards
+  // from the normalized {id, areaSqm, locality, extra} shape, bushfire chip
+  // only for WA, flood/topo chips hidden (QLD-only layers).
+  function renderStateIntel(d) {
+    const p = d.parcel || {};
+    const cards = [
+      intelCard('Parcel', p.id || 'Boundary only — no public attributes', d.provider || ''),
+      intelCard('Land area', p.areaSqm ? fmtNum(p.areaSqm) + ' m²' : '—',
+        'Cadastral polygon area'),
+    ];
+    if (d.zoning) {
+      const z = d.zoning;
+      cards.push(intelCard('Zoning', [z.category, z.name].filter(Boolean).join(' — ') || '—',
+        (z.licence || 'State zoning overlay') + ' · planning scheme'));
+    }
+    if (p.locality) {
+      cards.push(intelCard('Location', p.locality, 'Cadastral record address/locality'));
+    }
+    if (d.bushfire) {
+      intel.bushfireKind = String(d.jurisdiction).toLowerCase();
+      // ACT has the point check but no tileable layer — card only, no chip.
+      const hasBfTiles = d.jurisdiction === 'NSW' || d.jurisdiction === 'WA';
+      const bfChip = $('#prop-ov-bushfire');
+      if (bfChip) {
+        bfChip.classList.toggle('hidden', !hasBfTiles);
+        if (hasBfTiles) bfChip.textContent = `Bushfire prone (${d.jurisdiction})`;
+      }
+      cards.push(intelCard('Bushfire prone area', bushfireLabel(d),
+        `${d.bushfire.layer || 'Designated bushfire-prone layer'}${hasBfTiles ? ' · toggle the map overlay' : ''}`));
+    } else {
+      const bfChip = $('#prop-ov-bushfire');
+      if (bfChip) bfChip.classList.add('hidden');
+    }
+    if (d.flood) {
+      intel.floodKind = 'tas';
+      const flChip = $('#prop-ov-flood');
+      if (flChip) {
+        flChip.classList.remove('hidden');
+        flChip.textContent = 'Flood mapping (TAS)';
+      }
+      cards.push(intelCard('Flood hazard mapping',
+        d.flood.prone ? 'Yes — mapped 1% AEP riverine hazard' : 'Not in mapped hazard',
+        `${d.flood.layer || 'SES flood mapping'} · toggle the map overlay`));
+    } else if (d.jurisdiction === 'TAS') {
+      // SES flood layers are rasters: overlay-only, no point-query card.
+      intel.floodKind = 'tas';
+      const flChip = $('#prop-ov-flood');
+      if (flChip) {
+        flChip.classList.remove('hidden');
+        flChip.textContent = 'Flood mapping (TAS)';
+      }
+    } else {
+      const flChip = $('#prop-ov-flood');
+      if (flChip) flChip.classList.add('hidden');
+    }
+    const errs = d.errors || [];
+    if (errs.length) {
+      cards.push(intelCard('Unavailable layers', errs.map((e) => e.layer).join(', '),
+        errs.map((e) => (e.error || '').slice(0, 90)).join(' · ')));
+    }
+    $('#property-cards').innerHTML = cards.join('');
+
+    const rows = [];
+    const row = (k, v) => {
+      if (v !== null && v !== undefined && v !== '') {
+        rows.push('<div class="k">' + escapeHtml(k) + '</div><div class="v">' + escapeHtml(String(v)) + '</div>');
+      }
+    };
+    Object.entries(p.extra || {}).forEach(([k, v]) => {
+      row(k.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()), v);
+    });
+    if (p.locality) row('Locality/address', p.locality);
+    $('#property-details').innerHTML = rows.length
+      ? '<div class="kv">' + rows.join('') + '</div>' : '';
+    const topoEl = $('#prop-base-topo');
+    if (topoEl) topoEl.classList.add('hidden');
+
+    const failed = errs.map((e) => e.layer).join(', ');
+    const shown = state.inputs.properties[activePropertyIndex()] || {};
+    setPropertyStatus(
+      `${shown.address ? shown.address + ' · ' : ''}${d.provider || d.jurisdiction + ' Government open data'}`
+      + ` · fetched ${String(d.fetchedAt || '').replace('T', ' ').slice(0, 16)}`
+      + (p.id ? '' : ' · no parcel match at this coordinate')
+      + (failed ? ` · unavailable: ${failed}` : ''));
+    $('#property-sources').innerHTML = 'Source: ' + (d.sources || []).map((s) =>
+      `<a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.label)}</a>`
+      + ` · ${escapeHtml(s.licence || '')}`).join(' · ');
+    renderIntelMap(d);
+  }
+
   function renderIntel(d) {
     intel.bushfireKind = 'qld';
     const bfChip = $('#prop-ov-bushfire');
@@ -2593,6 +2955,10 @@
       if (el) el.classList.remove('hidden');
     });
     if (d && d.jurisdiction === 'VIC') { renderVicIntel(d); return; }
+    if (d && STATE_INTEL_JURISDICTIONS.has(String(d.jurisdiction || '').toUpperCase())) {
+      renderStateIntel(d);
+      return;
+    }
     const p = d.parcel || {};
     const lu = d.landUse || {};
     const rp = d.regionalPlan || {};
@@ -2711,16 +3077,27 @@
       intel.map.removeLayer(intel.parcel);
     }
     const activeBf = bushfireLayer();
-    const staleBf = activeBf === intel.bushfire ? intel.bushfireVic : intel.bushfire;
-    if (staleBf && intel.map.hasLayer(staleBf)) intel.map.removeLayer(staleBf);
+    [intel.bushfire, intel.bushfireVic, intel.bushfireWa, intel.bushfireNsw]
+      .forEach((l) => {
+        if (l && l !== activeBf && intel.map.hasLayer(l)) intel.map.removeLayer(l);
+      });
     if (intel.overlays.bushfire && activeBf) {
       if (!intel.map.hasLayer(activeBf)) activeBf.addTo(intel.map);
     } else if (activeBf && intel.map.hasLayer(activeBf)) {
       intel.map.removeLayer(activeBf);
     }
-    if (intel.overlays.flood && intel.flood) {
+    const floodTile = floodLayer();
+    [intel.floodVic, intel.floodTas].forEach((l) => {
+      if (l && l !== floodTile && intel.map.hasLayer(l)) intel.map.removeLayer(l);
+    });
+    if (intel.overlays.flood && floodTile) {
+      if (!intel.map.hasLayer(floodTile)) floodTile.addTo(intel.map);
+    } else if (floodTile && intel.map.hasLayer(floodTile)) {
+      intel.map.removeLayer(floodTile);
+    }
+    if (intel.overlays.flood && !floodTile && intel.flood) {
       if (!intel.map.hasLayer(intel.flood)) intel.flood.addTo(intel.map);
-    } else if (intel.flood && intel.map.hasLayer(intel.flood)) {
+    } else if (!floodTile && intel.flood && intel.map.hasLayer(intel.flood)) {
       intel.map.removeLayer(intel.flood);
     }
   }
@@ -3800,6 +4177,14 @@
     renderRatesTable();
     renderSuburbTable();
     renderRateHint();
+    // suburb metric history (trend analysis) — fills in after a few days
+    // of daily snapshots; absent today is fine
+    state.suburbHistory = null;
+    const sid = currentSuburb() && currentSuburb().id;
+    if (sid) {
+      state.suburbHistory = await api(`/api/suburbs/${sid}/history`)
+        .catch(() => null);
+    }
     recalc();
   }
 
@@ -3811,6 +4196,13 @@
       state.suburbs.map((s) =>
         `<option value="${s.id}" ${s.id === cur ? 'selected' : ''}>${escapeHtml(s.name)} ${escapeHtml(s.postcode)}</option>`
       ).join('');
+    const aiSel = $('#suburb-ai-select');
+    if (aiSel) {
+      aiSel.innerHTML = '<option value="0">— pick a suburb —</option>' +
+        state.suburbs.map((s) =>
+          `<option value="${s.id}">${escapeHtml(s.name)} ${escapeHtml(s.postcode)}${s.state ? ', ' + escapeHtml(s.state) : ''}</option>`
+        ).join('');
+    }
   }
 
   function renderRateHint() {
@@ -3824,8 +4216,19 @@
       .filter((r) => r.investorIoRate)
       .map((r) => `${escapeHtml(r.bankName)} ${(r.investorIoRate * 100).toFixed(2)}%`);
     const checked = state.bankRates.find((r) => r.checkedAt);
+    let freshness = '';
+    if (checked) {
+      const m = /^(\d{4})-(\d{2})/.exec(checked.checkedAt);
+      if (m) {
+        const monthsOld =
+          (Date.now() - new Date(+m[1], +m[2] - 1, 1).getTime()) / (1000 * 60 * 60 * 24 * 30.4);
+        if (monthsOld > 4) {
+          freshness = ' — rates look stale, run "Suggest current rates (AI)" in Area & suburb → Bank investor rates';
+        }
+      }
+    }
     el.textContent = 'Advertised investor IO rates: ' + parts.join(' · ') +
-      (checked ? ' (checked ' + checked.checkedAt + ')' : '');
+      (checked ? ' (checked ' + checked.checkedAt + ')' : '') + freshness;
   }
 
   function sourceNote(suburb, field) {
@@ -3867,7 +4270,30 @@
       statCard('5-yr capital growth', s.growth5yrPct != null ? s.growth5yrPct.toFixed(0) + '%' : '—', sourceNote(s, 'growth5yrPct')),
       statCard('Population growth', s.populationGrowthPct != null ? s.populationGrowthPct.toFixed(1) + '%' : '—', sourceNote(s, 'populationGrowthPct')),
       statCard('Days on market', s.medianDaysOnMarket != null ? fmtNum(s.medianDaysOnMarket) : '—', sourceNote(s, 'medianDaysOnMarket')),
+      ...(s.sa2Code ? [statCard('ABS SA2', escapeHtml(s.sa2Code),
+        'Census crosswalk — full SA2 profile in Deal Check')] : []),
     ].join('');
+
+    // Trend block — appears once a few daily snapshots have accumulated
+    const trend = $('#area-trend');
+    if (trend) {
+      const hist = state.suburbHistory || {};
+      const rows = Object.entries(hist)
+        .filter(([, pts]) => pts.length >= 2)
+        .map(([metric, pts]) => {
+          const first = pts[0].value, last = pts[pts.length - 1].value;
+          const delta = last - first;
+          const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '·';
+          return `<tr><td>${escapeHtml(metric)}</td><td>${fmtMoney(first)}</td>` +
+                 `<td>${fmtMoney(last)}</td><td>${arrow} ${fmtMoney(Math.abs(delta))}</td></tr>`;
+        }).join('');
+      trend.innerHTML = rows
+        ? `<h2>Trend <span class="unit">daily snapshots</span></h2>
+           <div class="table-wrap"><table>
+           <thead><tr><th>Metric</th><th>First</th><th>Latest</th><th>Change</th></tr></thead>
+           <tbody>${rows}</tbody></table></div>`
+        : '';
+    }
 
     const pc = encodeURIComponent(s.postcode);
     const slug = encodeURIComponent(String(s.name).toLowerCase().replace(/\s+/g, '-'));
@@ -4078,7 +4504,7 @@
     }
     t.innerHTML = `
       <thead><tr><th></th><th>Address</th><th>Sold</th><th>Date</th><th>Beds</th>
-      <th>Land</th><th>Rent</th><th>Confidence</th><th>Source</th></tr></thead><tbody>
+      <th>~km</th><th>Land</th><th>Rent</th><th>Confidence</th><th>Source</th></tr></thead><tbody>
       ${state.compCandidates.map((c, i) => {
         const label = escapeHtml(c.address || 'listing');
         let host = c.source || '';
@@ -4089,6 +4515,7 @@
           <td>${c.soldPrice ? fmtMoney(c.soldPrice) : '—'}</td>
           <td>${escapeHtml(c.soldDate || '')}</td>
           <td>${c.beds != null ? c.beds : '—'}</td>
+          <td>${c.distanceKm != null ? c.distanceKm + ' km' : '—'}</td>
           <td>${c.landM2 ? fmtNum(c.landM2) + ' m²' : '—'}</td>
           <td>${c.rentEstimate ? fmtMoney(c.rentEstimate) : '—'}</td>
           <td><span class="conf-${escapeHtml(c.confidence || 'low')}">${escapeHtml(c.confidence || 'low')}</span></td>
@@ -4102,25 +4529,33 @@
     const btn = $('#btn-find-comps');
     const hint = $('#comp-search-hint');
     if (!state.scenarioId) { hint.textContent = 'Save the scenario first.'; return; }
-    const address = (state.inputs.address || '').trim();
+    const prop = state.inputs.properties[activePropertyIndex()] || {};
+    const address = String(prop.address || '').trim();
     if (!address) { hint.textContent = 'Enter the subject address in Inputs first.'; return; }
     hint.textContent = '';
     btn.disabled = true;
-    btn.textContent = 'Searching… can take a minute';
+    const stopTick = busyTicker(btn, 'Searching');
     try {
-      const data = await api('/api/comps/search', {
+      const final = await apiStream('/api/comps/search/stream', {
         method: 'POST',
-        body: JSON.stringify({ address, beds: state.inputs.bedrooms || null }),
+        body: JSON.stringify({ address, beds: prop.bedrooms || null }),
+      }, (ev) => {
+        if (ev.query) hint.textContent =
+          `Searching: “${ev.query}”${ev.shard ? ' · ' + ev.shard : ''}`;
+        else if (ev.note) hint.textContent = ev.note;
       });
-      state.compCandidates = data.comps || [];
+      state.compCandidates = final.comps || [];
       $('#comp-search-msg').textContent = '';
+      hint.textContent = '';
       renderCompSearch();
+      stopTick();
       btn.disabled = false;
       btn.textContent = 'Find sold comps (AI)';
     } catch (err) {
+      stopTick();
       btn.textContent = 'Find sold comps (AI)';
       if (/not configured/.test(err.message)) {
-        hint.textContent = 'AI comps search is off — set PA_ANTHROPIC_API_KEY in .env (needs Anthropic API credits) to enable.';
+        hint.textContent = 'AI comps search is off — set PA_ULTIMATEAI_API_KEY in .env (needs UltimateAI gateway credits) to enable.';
         // stays disabled until the key is added and the app restarts
       } else {
         btn.disabled = false;
@@ -4144,7 +4579,8 @@
           body: JSON.stringify({
             address: c.address, soldPrice: c.soldPrice, soldDate: c.soldDate,
             beds: c.beds, landM2: c.landM2, rentEstimate: c.rentEstimate,
-            url: c.url, notes: 'AI search (' + (c.confidence || 'low') + ' confidence)',
+            url: c.url, notes: 'AI search (' + (c.confidence || 'low') + ' confidence'
+              + (c.distanceKm != null ? ' · ~' + c.distanceKm + ' km' : '') + ')',
           }),
         });
         saved++;
@@ -4161,6 +4597,454 @@
       await loadComps();
       recalc();
     }
+  });
+
+  // --- AI rental-evidence search ----------------------------------------
+
+  function renderRentalSearch() {
+    const box = $('#rental-search-results');
+    const t = $('#rental-search-table');
+    box.classList.remove('hidden');
+    if (!state.rentalCandidates.length) {
+      t.innerHTML = '<tr><td>No comparable rentals found — try a more specific address or add one manually below.</td></tr>';
+      return;
+    }
+    t.innerHTML = `
+      <thead><tr><th></th><th>Address</th><th>Rent/wk</th><th>Listed</th><th>Beds</th><th>Type</th><th>~km</th><th>Confidence</th><th>Source</th></tr></thead><tbody>
+      ${state.rentalCandidates.map((r, i) => {
+        const label = escapeHtml(r.address || 'listing');
+        let host = r.source || '';
+        try { host = new URL(r.url).hostname.replace(/^www\./, ''); } catch (e) { /* keep source */ }
+        return `<tr>
+          <td><input type="checkbox" data-rental-cand="${i}" checked></td>
+          <td>${r.url ? `<a class="comp-link" href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${label}</a>` : label}</td>
+          <td>${r.rentWeekly ? fmtMoney(r.rentWeekly) : '—'}</td>
+          <td>${escapeHtml(r.listedDate || '—')}</td>
+          <td>${r.bedrooms != null ? r.bedrooms : '—'}</td>
+          <td>${escapeHtml(r.propertyType || '—')}</td>
+          <td>${r.distanceKm != null ? r.distanceKm + ' km' : '—'}</td>
+          <td><span class="conf-${escapeHtml(r.confidence || 'low')}">${escapeHtml(r.confidence || 'low')}</span></td>
+          <td>${escapeHtml(host)}</td>
+        </tr>`;
+      }).join('')}
+      </tbody>`;
+  }
+
+  $('#btn-find-rentals').addEventListener('click', async () => {
+    const btn = $('#btn-find-rentals');
+    const hint = $('#rental-search-hint');
+    if (!state.scenarioId) { hint.textContent = 'Save the scenario first.'; return; }
+    const prop = state.inputs.properties[activePropertyIndex()] || {};
+    const address = String(prop.address || '').trim();
+    if (!address) { hint.textContent = 'Enter the subject address in Inputs first.'; return; }
+    hint.textContent = '';
+    btn.disabled = true;
+    const stopTick = busyTicker(btn, 'Searching');
+    try {
+      const final = await apiStream('/api/rentals/search/stream', {
+        method: 'POST',
+        body: JSON.stringify({ address, beds: prop.bedrooms || null }),
+      }, (ev) => {
+        if (ev.query) hint.textContent =
+          `Searching: “${ev.query}”${ev.shard ? ' · ' + ev.shard : ''}`;
+        else if (ev.note) hint.textContent = ev.note;
+      });
+      state.rentalCandidates = final.rentals || [];
+      $('#rental-search-msg').textContent = '';
+      hint.textContent = '';
+      renderRentalSearch();
+      stopTick();
+      btn.disabled = false;
+      btn.textContent = 'Find rental evidence (AI)';
+    } catch (err) {
+      stopTick();
+      btn.textContent = 'Find rental evidence (AI)';
+      if (/not configured/.test(err.message)) {
+        hint.textContent = 'AI rental search is off — set PA_ULTIMATEAI_API_KEY in .env (needs UltimateAI gateway credits) to enable.';
+        // stays disabled until the key is added and the app restarts
+      } else {
+        btn.disabled = false;
+        hint.textContent = 'Search failed: ' + err.message;
+      }
+    }
+  });
+
+  $('#btn-save-rentals').addEventListener('click', async () => {
+    if (!state.scenarioId) return;
+    const msg = $('#rental-search-msg');
+    const picked = $$('input[data-rental-cand]').filter((cb) => cb.checked)
+      .map((cb) => state.rentalCandidates[Number(cb.dataset.rentalCand)])
+      .filter(Boolean);
+    if (!picked.length) { msg.textContent = 'Tick at least one row.'; return; }
+    let saved = 0;
+    for (const r of picked) {
+      try {
+        await api(`/api/scenarios/${state.scenarioId}/rentals`, {
+          method: 'POST',
+          body: JSON.stringify({
+            address: r.address, rentWeekly: r.rentWeekly,
+            bedrooms: r.bedrooms, propertyType: r.propertyType || 'house',
+            url: r.url, notes: 'AI search (' + (r.confidence || 'low') + ' confidence'
+              + (r.listedDate ? ' · listed ' + r.listedDate : '')
+              + (r.distanceKm != null ? ' · ~' + r.distanceKm + ' km' : '') + ')',
+          }),
+        });
+        saved++;
+        msg.textContent = `Saving… ${saved}/${picked.length}`;
+      } catch (err) {
+        msg.textContent = `Saved ${saved} of ${picked.length} — ${err.message}`;
+        break;
+      }
+    }
+    if (saved) {
+      state.rentalCandidates = [];
+      $('#rental-search-results').classList.add('hidden');
+      msg.textContent = `Saved ${saved} rental${saved === 1 ? '' : 's'}.`;
+      await loadComps();
+      recalc();
+    }
+  });
+
+  // --- AI web-evidence actions ------------------------------------------
+  // Markets refresh, bank-rate suggestions, suburb evidence, listing check
+  // and area signals. All one gateway call behind a busy button, matching
+  // the comps/rentals search pattern above.
+
+  const notConfiguredHint = (what) =>
+    `AI ${what} is off — set PA_ULTIMATEAI_API_KEY in .env (needs UltimateAI gateway credits) to enable.`;
+
+  // --- New-address AI research prompt ---------------------------------------
+  // When a located address is on a saved scenario and AI is configured,
+  // surface the four research actions right in Inputs as deep-links.
+  let aiStatus = null;
+  async function refreshAiResearchRow() {
+    const row = $('#ai-research-row');
+    if (!row) return;
+    const prop = state.inputs.properties[activePropertyIndex()] || {};
+    const meta = prop.addressMeta || {};
+    // research works from the address text alone; coordinates only matter
+    // for the map/spatial features
+    const hasAddress = String(prop.address || '').trim().length > 5;
+    if (!state.scenarioId || !(hasAddress || (meta.lat && meta.lon))) {
+      row.classList.add('hidden');
+      return;
+    }
+    if (!aiStatus) {
+      try { aiStatus = await api('/api/ai/status'); }
+      catch (err) { aiStatus = { configured: false }; }
+    }
+    const modelEl = $('#ai-research-model');
+    if (modelEl) modelEl.textContent = aiStatus.configured
+      ? '· ' + (aiStatus.model || 'gateway') : '· not configured';
+    row.classList.toggle('hidden', !aiStatus.configured);
+  }
+
+  const aiGo = (target, btnSel) => {
+    document.querySelector(`a[data-target="${target}"]`).click();
+    setTimeout(() => {
+      const btn = document.querySelector(btnSel);
+      if (btn) btn.click();
+    }, 500);
+  };
+  $('#ai-go-comps').addEventListener('click', () => aiGo('area', '#btn-find-comps'));
+  $('#ai-go-rentals').addEventListener('click', () => aiGo('area', '#btn-find-rentals'));
+  $('#ai-go-listing').addEventListener('click', () => aiGo('property', '#btn-listing-check'));
+  $('#ai-go-signals').addEventListener('click', () => aiGo('dealcheck', '#btn-dc-signals'));
+
+  // Live elapsed-seconds on the busy button — AI web research runs 30-80s
+  // (the gateway executes each web search server-side), and a static
+  // "searching…" label reads as stuck.
+  function busyTicker(btn, label) {
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+      btn.textContent = `${label}… ${Math.round((Date.now() - t0) / 1000)}s`;
+    }, 1000);
+    return () => clearInterval(iv);
+  }
+
+  const activeSubject = () => {
+    if (!state.scenarioId) return { error: 'Save the scenario first.' };
+    const prop = state.inputs.properties[activePropertyIndex()] || {};
+    const address = String(prop.address || '').trim();
+    if (!address) return { error: 'Enter the subject address in Inputs first.' };
+    return { address };
+  };
+
+  $('#btn-mk-ai').addEventListener('click', async () => {
+    const btn = $('#btn-mk-ai');
+    const hint = $('#mk-ai-hint');
+    hint.textContent = '';
+    btn.disabled = true;
+    const stopTick = busyTicker(btn, 'Researching ABS');
+    try {
+      const final = await apiStream('/api/markets/ai-refresh/stream', { method: 'POST', body: '{}' }, (ev) => {
+        if (ev.query) hint.textContent =
+          `Searching: “${ev.query}”${ev.shard ? ' · ' + ev.shard : ''}`;
+        else if (ev.note) hint.textContent = ev.note;
+      });
+      mkCache = null;
+      await loadMarkets();
+      stopTick();
+      hint.textContent =
+        `${Object.keys(final.indicators || {}).length} national indicators refreshed from live sources.`;
+    } catch (err) {
+      stopTick();
+      hint.textContent = /not configured/.test(err.message)
+        ? notConfiguredHint('markets refresh') : 'Refresh failed: ' + err.message;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Refresh with AI';
+  });
+
+  function renderRatesAi() {
+    const box = $('#rates-ai-box');
+    const t = $('#rates-ai-table');
+    box.classList.remove('hidden');
+    if (!state.aiRateCandidates.length) {
+      t.innerHTML = '<tr><td>No rates found — try again later or add one manually below.</td></tr>';
+      return;
+    }
+    t.innerHTML = `
+      <thead><tr><th></th><th>Bank</th><th>Product</th><th>Investor IO</th><th>Investor P&amp;I</th><th>Source</th></tr></thead><tbody>
+      ${state.aiRateCandidates.map((r, i) => {
+        let host = r.source || '';
+        try { host = new URL(r.source).hostname.replace(/^www\./, ''); } catch (e) { /* keep source */ }
+        return `<tr>
+          <td><input type="checkbox" data-rate-cand="${i}" checked></td>
+          <td>${escapeHtml(r.bankName)}</td>
+          <td>${escapeHtml(r.productName)}</td>
+          <td>${r.investorIoRate != null ? (r.investorIoRate * 100).toFixed(2) + '%' : '—'}</td>
+          <td>${r.investorPiRate != null ? (r.investorPiRate * 100).toFixed(2) + '%' : '—'}</td>
+          <td>${r.source ? `<a class="comp-link" href="${escapeHtml(r.source)}" target="_blank" rel="noopener">${escapeHtml(host)}</a>` : ''}</td>
+        </tr>`;
+      }).join('')}
+      </tbody>`;
+  }
+
+  $('#btn-rates-ai').addEventListener('click', async () => {
+    const btn = $('#btn-rates-ai');
+    const hint = $('#rates-ai-hint');
+    hint.textContent = '';
+    btn.disabled = true;
+    const stopTick = busyTicker(btn, 'Researching rates');
+    try {
+      const final = await apiStream('/api/bank-rates/suggest/stream', {
+        method: 'POST',
+        body: '{}',
+      }, (ev) => {
+        if (ev.query) hint.textContent =
+          `Searching: “${ev.query}”${ev.shard ? ' · ' + ev.shard : ''}`;
+        else if (ev.note) hint.textContent = ev.note;
+      });
+      state.aiRateCandidates = final.rates || [];
+      $('#rates-ai-msg').textContent = '';
+      renderRatesAi();
+    } catch (err) {
+      hint.textContent = /not configured/.test(err.message)
+        ? notConfiguredHint('rate suggestions') : 'Suggest failed: ' + err.message;
+    }
+    stopTick();
+    btn.disabled = false;
+    btn.textContent = 'Suggest current rates (AI)';
+  });
+
+  $('#btn-save-rates-ai').addEventListener('click', async () => {
+    const msg = $('#rates-ai-msg');
+    const picked = $$('input[data-rate-cand]').filter((cb) => cb.checked)
+      .map((cb) => state.aiRateCandidates[Number(cb.dataset.rateCand)])
+      .filter(Boolean);
+    if (!picked.length) { msg.textContent = 'Tick at least one row.'; return; }
+    let saved = 0;
+    for (const r of picked) {
+      try {
+        await api('/api/bank-rates', {
+          method: 'POST',
+          body: JSON.stringify({
+            bankName: r.bankName, productName: r.productName,
+            investorIoRate: r.investorIoRate, investorPiRate: r.investorPiRate,
+            source: r.source, checkedAt: new Date().toISOString().slice(0, 7),
+          }),
+        });
+        saved++;
+        msg.textContent = `Saving… ${saved}/${picked.length}`;
+      } catch (err) {
+        msg.textContent = `Saved ${saved} of ${picked.length} — ${err.message}`;
+        break;
+      }
+    }
+    if (saved) {
+      state.aiRateCandidates = [];
+      $('#rates-ai-box').classList.add('hidden');
+      msg.textContent = `Saved ${saved} rate${saved === 1 ? '' : 's'}.`;
+      await loadAreaData();
+    }
+  });
+
+  $('#btn-suburb-ai').addEventListener('click', async () => {
+    const btn = $('#btn-suburb-ai');
+    const hint = $('#suburb-ai-hint');
+    const sid = Number($('#suburb-ai-select') && $('#suburb-ai-select').value) || 0;
+    if (!sid) { hint.textContent = 'Pick a suburb first.'; return; }
+    hint.textContent = '';
+    btn.disabled = true;
+    const stopTick = busyTicker(btn, 'Researching suburb');
+    try {
+      const final = await apiStream('/api/suburbs/ai-evidence/stream', {
+        method: 'POST',
+        body: JSON.stringify({ suburbId: sid }),
+      }, (ev) => {
+        if (ev.query) hint.textContent =
+          `Searching: “${ev.query}”${ev.shard ? ' · ' + ev.shard : ''}`;
+        else if (ev.note) hint.textContent = ev.note;
+      });
+      await loadAreaData();
+      stopTick();
+      const n = Object.keys(final.evidence || {}).length;
+      hint.textContent =
+        `${n} figure${n === 1 ? '' : 's'} updated and saved to the suburb record.`;
+    } catch (err) {
+      stopTick();
+      hint.textContent = /not configured/.test(err.message)
+        ? notConfiguredHint('suburb evidence') : 'Suburb research failed: ' + err.message;
+    }
+    stopTick();
+    btn.disabled = false;
+    btn.textContent = 'AI research this suburb';
+  });
+
+  $('#btn-dc-suburb-ai').addEventListener('click', async () => {
+    const btn = $('#btn-dc-suburb-ai');
+    const hint = $('#dc-ai-hint');
+    const sid = Number(state.inputs.suburbId) || 0;
+    if (!sid) { hint.textContent = 'Select a suburb in Inputs first.'; return; }
+    hint.textContent = '';
+    btn.disabled = true;
+    const stopTick = busyTicker(btn, 'Researching suburb');
+    try {
+      const final = await apiStream('/api/suburbs/ai-evidence/stream', {
+        method: 'POST',
+        body: JSON.stringify({ suburbId: sid }),
+      }, (ev) => {
+        if (ev.query) hint.textContent =
+          `Searching: “${ev.query}”${ev.shard ? ' · ' + ev.shard : ''}`;
+        else if (ev.note) hint.textContent = ev.note;
+      });
+      await loadAreaData();
+      await initDealCheckPage(true);
+      stopTick();
+      const n = Object.keys(final.evidence || {}).length;
+      hint.textContent =
+        `${n} suburb figure${n === 1 ? '' : 's'} updated and saved to the suburb record.`;
+    } catch (err) {
+      stopTick();
+      hint.textContent = /not configured/.test(err.message)
+        ? notConfiguredHint('suburb evidence') : 'Suburb research failed: ' + err.message;
+    }
+    btn.disabled = false;
+    btn.textContent = 'AI suburb evidence';
+  });
+
+  function renderSignals(signals, asAt) {
+    const box = $('#dc-signals-box');
+    box.classList.remove('hidden');
+    if (!signals.length) {
+      box.innerHTML = '<div class="hint">No substantiated major projects found within ~5 km.</div>';
+      return;
+    }
+    box.innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Project</th><th>Type</th><th>Status</th><th>Timeframe</th><th>~km</th></tr></thead><tbody>
+        ${signals.map((s) => `<tr>
+          <td>${s.url ? `<a class="comp-link" href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.name)}</a>` : escapeHtml(s.name)}</td>
+          <td>${escapeHtml(s.type)}</td>
+          <td>${escapeHtml((s.status || '').replace('_', ' '))}</td>
+          <td>${escapeHtml(s.timeframe || '—')}</td>
+          <td>${s.distanceKm != null ? s.distanceKm : '—'}</td>
+        </tr>`).join('')}
+        </tbody></table></div>
+      <div class="source-note">AI web search${asAt ? ' · ' + escapeHtml(asAt) : ''} — open each link to verify before relying on it.</div>`;
+  }
+
+  $('#btn-dc-signals').addEventListener('click', async () => {
+    const btn = $('#btn-dc-signals');
+    const hint = $('#dc-ai-hint');
+    const subj = activeSubject();
+    if (subj.error) { hint.textContent = subj.error; return; }
+    hint.textContent = '';
+    btn.disabled = true;
+    const stopTick = busyTicker(btn, 'Researching projects');
+    try {
+      const final = await apiStream('/api/property/area-signals/stream', {
+        method: 'POST',
+        body: JSON.stringify({ address: subj.address }),
+      }, (ev) => {
+        if (ev.query) hint.textContent =
+          `Searching: “${ev.query}”${ev.shard ? ' · ' + ev.shard : ''}`;
+        else if (ev.note) hint.textContent = ev.note;
+      });
+      stopTick();
+      state.areaSignals = final.signals || [];
+      renderSignals(state.areaSignals, final.asAt);
+    } catch (err) {
+      stopTick();
+      hint.textContent = /not configured/.test(err.message)
+        ? notConfiguredHint('area signals') : 'Signals search failed: ' + err.message;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Area signals (AI)';
+  });
+
+  function renderListingCheck(l, asAt) {
+    const box = $('#listing-check-box');
+    box.classList.remove('hidden');
+    const cards = [
+      `<div class="card stat-card"><div class="label">On market now</div>
+        <div class="value">${l.onMarket ? 'Yes' : 'No'}</div>
+        <div class="sub">${escapeHtml(l.listedDate || '')}</div></div>`,
+    ];
+    if (l.askingPrice) {
+      cards.push(`<div class="card stat-card"><div class="label">Asking</div>
+        <div class="value">${fmtMoney(l.askingPrice)}</div>
+        <div class="sub">${escapeHtml(l.agent || '')}</div></div>`);
+    }
+    if (l.lastSoldPrice) {
+      cards.push(`<div class="card stat-card"><div class="label">Last sold</div>
+        <div class="value">${fmtMoney(l.lastSoldPrice)}</div>
+        <div class="sub">${escapeHtml(l.lastSoldDate || '')}</div></div>`);
+    }
+    const link = l.url
+      ? ` — <a class="comp-link" href="${escapeHtml(l.url)}" target="_blank" rel="noopener">listing page</a>` : '';
+    box.innerHTML = `<div class="cards">${cards.join('')}</div>
+      <div class="source-note">AI web search · confidence ${escapeHtml(l.confidence || 'low')}${asAt ? ' · ' + escapeHtml(asAt) : ''}${link} — verify on the linked page.</div>`;
+  }
+
+  $('#btn-listing-check').addEventListener('click', async () => {
+    const btn = $('#btn-listing-check');
+    const hint = $('#listing-check-hint');
+    const subj = activeSubject();
+    if (subj.error) { hint.textContent = subj.error; return; }
+    hint.textContent = '';
+    btn.disabled = true;
+    const stopTick = busyTicker(btn, 'Checking listings');
+    try {
+      const final = await apiStream('/api/property/listing-check/stream', {
+        method: 'POST',
+        body: JSON.stringify({ address: subj.address }),
+      }, (ev) => {
+        if (ev.query) hint.textContent =
+          `Searching: “${ev.query}”${ev.shard ? ' · ' + ev.shard : ''}`;
+        else if (ev.note) hint.textContent = ev.note;
+      });
+      stopTick();
+      state.listingCheck = final.listing || {};
+      renderListingCheck(state.listingCheck, final.asAt);
+    } catch (err) {
+      stopTick();
+      hint.textContent = /not configured/.test(err.message)
+        ? notConfiguredHint('listing check') : 'Listing check failed: ' + err.message;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Listing check (AI)';
   });
 
   $('#btn-add-rate').addEventListener('click', async () => {
@@ -4281,6 +5165,53 @@
       throw e;
     }
     return body.data;
+  }
+
+  // SSE variant of api() for the AI research stream routes: calls onEvent
+  // with each progress frame and resolves with the final {"type": "done",
+  // ...} frame. Non-200 responses are JSON error envelopes, surfaced
+  // exactly like api().
+  async function apiStream(url, opts = {}, onEvent = null) {
+    const headers = Object.assign(
+      { 'Content-Type': 'application/json' }, opts.headers);
+    if (opts.body && typeof opts.body === 'object') {
+      opts.body = JSON.stringify(opts.body);
+    }
+    if (getToken()) headers.Authorization = 'Bearer ' + getToken();
+    const resp = await fetch(url, Object.assign({}, opts, { headers }));
+    if (resp.status === 401) {
+      setToken(null);
+      setCurrentUser(null);
+      showLogin('Your session expired — please sign in again');
+      throw new Error('authentication required');
+    }
+    if (!resp.ok || !(resp.body && resp.body.getReader)) {
+      const body = await resp.json().catch(() => ({ error: 'request failed' }));
+      throw new Error(body.error || 'request failed');
+    }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    let final = null;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const line = frame.split('\n').find((l) => l.startsWith('data: '));
+        if (!line) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch (e) { continue; }
+        if (ev.type === 'done' || ev.type === 'error') final = ev;
+        else if (onEvent) onEvent(ev);
+      }
+    }
+    if (final && final.type === 'error') throw new Error(final.error);
+    if (!final) throw new Error('research stream ended without results');
+    return final;
   }
 
   function saveErrorText(err) {
@@ -4654,6 +5585,12 @@
           clientName: client ? client.name : '',
           title: $('#ws-title').value.trim() || undefined,
           expiresInDays: Number($('#ws-expiry').value || 30),
+          // transient AI research rides the share so the client's PDF
+          // includes it (server whitelists the keys)
+          extras: {
+            listingCheck: state.listingCheck || null,
+            areaSignals: (state.areaSignals || []).length ? state.areaSignals : null,
+          },
         },
       });
       showShareLink(d.id, d.shareToken);
@@ -4663,6 +5600,96 @@
 
   // Full report pack — engine outputs posted to the server, which adds
   // comps, rentals, suburb data, overlays and branding and renders a PDF.
+  // ------------------------------------------------------------------
+  // Client report section picker (modular reports)
+  // ------------------------------------------------------------------
+
+  const REPORT_SECTIONS = [
+    { group: 'Core numbers', items: [
+      ['cashflow', 'Cash flow — first year'],
+      ['whoPays', 'Who pays the cost?'],
+      ['projections', 'Projections over the hold'],
+      ['exit', 'Exit & CGT'],
+      ['properties', 'Per-property breakdown'],
+    ] },
+    { group: 'Intelligence', items: [
+      ['propertyIntel', 'Property intelligence (parcel, zoning, hazards)'],
+      ['dealCheck', 'Deal Check verdicts'],
+      ['checks', 'Due-diligence checklist'],
+      ['replacement', 'Replacement value'],
+      ['listingCheck', 'Listing check'],
+      ['areaSignals', 'Area signals'],
+    ] },
+    { group: 'Evidence & area', items: [
+      ['rentalEvidence', 'Rental evidence'],
+      ['salesEvidence', 'Sales evidence'],
+      ['suburb', 'Suburb snapshot'],
+    ] },
+    { group: 'Attachments', items: [
+      ['documents', 'Attached documents'],
+    ] },
+  ];
+
+  function savedReportSections() {
+    try {
+      const v = JSON.parse(localStorage.getItem('pa_report_sections') || '[]');
+      return Array.isArray(v) ? v.filter((k) => typeof k === 'string') : [];
+    } catch (e) { return []; }
+  }
+
+  let reportDialogSid = null;
+
+  function openReportDialog(sid) {
+    if (!sid) { toast('This share has no linked scenario'); return; }
+    reportDialogSid = sid;
+    const saved = savedReportSections();
+    $('#report-dialog-groups').innerHTML = REPORT_SECTIONS.map((g) => `
+      <div class="report-dialog-group">
+        <div class="report-dialog-group-label">${escapeHtml(g.group)}</div>
+        ${g.items.map(([key, label]) => `
+          <label class="report-dialog-check"><input type="checkbox" data-report-section="${key}"
+            ${!saved.length || saved.includes(key) ? 'checked' : ''}><span>${escapeHtml(label)}</span></label>`).join('')}
+      </div>`).join('');
+    $('#report-dialog').classList.remove('hidden');
+  }
+
+  function closeReportDialog() {
+    $('#report-dialog').classList.add('hidden');
+    reportDialogSid = null;
+  }
+
+  function wireReportDialog() {
+    const overlay = $('#report-dialog');
+    if (!overlay) return;
+    $('#report-dialog-x').addEventListener('click', closeReportDialog);
+    $('#report-dialog-cancel').addEventListener('click', closeReportDialog);
+    overlay.addEventListener('mousedown', (ev) => { if (ev.target === overlay) closeReportDialog(); });
+    $('#report-dialog-select-all').addEventListener('click', () => {
+      overlay.querySelectorAll('input[data-report-section]').forEach((cb) => { cb.checked = true; });
+    });
+    const collectSections = () => [...overlay.querySelectorAll('input[data-report-section]:checked')]
+      .map((cb) => cb.dataset.reportSection);
+    $('#report-dialog-download').addEventListener('click', async () => {
+      const keys = collectSections();
+      if (!keys.length) { toast('Pick at least one section'); return; }
+      localStorage.setItem('pa_report_sections', JSON.stringify(keys));
+      const sid = reportDialogSid;
+      closeReportDialog();
+      await downloadScenarioReport(sid, false, keys);
+    });
+    $('#report-dialog-excel').addEventListener('click', async () => {
+      const keys = collectSections();
+      if (!keys.length) { toast('Pick at least one section'); return; }
+      localStorage.setItem('pa_report_sections', JSON.stringify(keys));
+      const sid = reportDialogSid;
+      closeReportDialog();
+      await downloadScenarioExcel(sid, keys);
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && !overlay.classList.contains('hidden')) closeReportDialog();
+    });
+  }
+
   function buildReportPayload(result, inputs) {
     const horizon = Number(inputs.projectionYears) || 20;
     const rows = result.rows.slice(0, horizon).map((row) => ({
@@ -4739,6 +5766,9 @@
       subject: { price: prop.purchasePrice, weeklyRent: prop.weeklyRent,
                  landValue: prop.landValue, bedrooms: prop.bedrooms,
                  address: prop.address },
+      // Transient session data — included only when the user ran them.
+      listingCheck: state.listingCheck || null,
+      areaSignals: (state.areaSignals || []).length ? state.areaSignals : null,
     };
   }
 
@@ -4758,7 +5788,7 @@
       await dcEvidence(suburb, comps, rentals));
   }
 
-    async function downloadScenarioReport(sid, taxPack = false) {
+    async function downloadScenarioReport(sid, taxPack = false, sections = null) {
     if (!sid) { toast('This share has no linked scenario'); return; }
     try {
       const d = await api('/api/scenarios/' + sid);
@@ -4770,6 +5800,7 @@
       const payload = buildReportPayload(result, inputs);
       if (taxPack) payload.taxPack = true;
       else payload.dealCheck = await dealCheckForReport(sid, inputs, result);
+      if (Array.isArray(sections) && sections.length) payload.sections = sections;
       const resp = await fetch(`/api/scenarios/${sid}/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
@@ -4794,13 +5825,14 @@
     } catch (err) { toast('Error: ' + err.message); }
   }
 
-  async function downloadScenarioExcel(sid) {
+  async function downloadScenarioExcel(sid, sections = null) {
     if (!sid) { toast('This share has no linked scenario'); return; }
     try {
       const d = await api('/api/scenarios/' + sid);
       const suburb = (state.suburbs || []).find((s) => s.id === d.suburbId) || null;
       const result = E.calculateAll(d.inputs, { suburb });
       const payload = buildReportPayload(result, result.inputs);
+      if (Array.isArray(sections) && sections.length) payload.sections = sections;
       const resp = await fetch(`/api/scenarios/${sid}/excel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getToken() },
@@ -4835,7 +5867,7 @@
           <span class="v">${escapeHtml(e.body || '')}</span>`).join('')
           || '<span class="k">no activity yet</span><span class="v"></span>';
       } else if (btn.dataset.wsReport) {
-        await downloadScenarioReport(btn.dataset.wsReportSid);
+        openReportDialog(btn.dataset.wsReportSid);
       } else if (btn.dataset.wsTax) {
         await downloadScenarioReport(btn.dataset.wsTaxSid, true);
       } else if (btn.dataset.wsXls) {
@@ -5105,6 +6137,10 @@
       $('#ws-brand-name').value = b.businessName || '';
       $('#ws-brand-color').value = b.accentColor || '#6366f1';
       $('#ws-brand-tagline').value = b.tagline || '';
+      $('#ws-brand-phone').value = b.phone || '';
+      $('#ws-brand-email').value = b.email || '';
+      $('#ws-brand-website').value = b.website || '';
+      $('#ws-brand-office').value = b.officeAddress || '';
       setFavicon(b.logoUrl);
       $('#ws-plan').textContent = me.plan || 'trial';
       $('#ws-upgrade').classList.toggle('hidden', me.plan === 'pro');
@@ -5119,9 +6155,13 @@
           businessName: $('#ws-brand-name').value.trim(),
           accentColor: $('#ws-brand-color').value,
           tagline: $('#ws-brand-tagline').value.trim(),
+          phone: $('#ws-brand-phone').value.trim(),
+          email: $('#ws-brand-email').value.trim(),
+          website: $('#ws-brand-website').value.trim(),
+          officeAddress: $('#ws-brand-office').value.trim(),
         },
       });
-      toast('Branding saved — clients see it on their portal');
+      toast('Branding saved — clients see it on their portal and reports');
     } catch (err) { toast('Error: ' + err.message); }
   });
 
@@ -5261,6 +6301,7 @@
       saveDraft();
       await refreshScenarioList();
       await loadComps();
+      refreshAiResearchRow();
     } catch (err) { toast('Save failed: ' + saveErrorText(err)); }
   });
 
@@ -5476,6 +6517,7 @@
     await loadComps();
     await refreshScenarioList().catch(() => toast('Could not reach scenario API'));
     await refreshPropertyLocations();
+    refreshAiResearchRow();
   }
 
   async function doAuth(endpoint) {
@@ -5520,6 +6562,7 @@
   function boot() {
     setupAppShell();
     wireCommandPalette();
+    wireReportDialog();
     bindInputs();
     bindMaskToggles();
     wireDashboard();
@@ -5597,12 +6640,14 @@
       return;
     }
     // Existing token: verify it still names a live user before loading data.
+    // Deliberately NOT landAfterLogin() here — on a fresh tab the user should
+    // stay on the dashboard; the workspace hand-off is for actual logins.
     api('/api/auth/me')
       .then(async (me) => {
         setCurrentUser(me);
         hideLogin();
         await initUserSession();
-        landAfterLogin();
+        goSection('overview');
       })
       .catch(() => { /* 401 path already surfaced the login screen */ });
   }

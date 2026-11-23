@@ -14,6 +14,7 @@ Provides:
 import json
 import math
 import os
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -35,8 +36,56 @@ FIELDS = [
     "sa2_code_2021", "sa2_name_2021", "erp_p_20", "dwell_7", "leed_4",
     "irsd_score", "hied_1_pc", "lf_3", "lf_4", "lf_5", "arrmig_2",
     "erp_sch_1_pc", "erp_p_75p_pc", "tenure_4", "publich_1_pc",
-    "afford_3", "afford_5", "house_2_pc",
+    "afford_3", "afford_5", "house_2_pc", "tenure_owned", "tenure_3",
+    "house_3_pc", "unpaidw_3", "vehd_1_pc", "hhtype_6", "ing_erp_p_pc",
 ]
+
+# ASGS: the first digit of an SA2 code identifies its state/territory.
+_STATE_BY_DIGIT = {"1": "NSW", "2": "VIC", "3": "QLD", "4": "SA",
+                   "5": "WA", "6": "TAS", "7": "NT", "8": "ACT"}
+
+
+def _state_from_code(sa2_code):
+    digits = re.sub(r"\D", "", str(sa2_code or ""))
+    return _STATE_BY_DIGIT.get(digits[:1])
+
+
+_names_cache = {"data": None, "at": 0.0}
+
+
+def _sa2_names():
+    """[{code, name, state}] for every SA2 — used by the suburb crosswalk."""
+    now = time.time()
+    if _names_cache["data"] and now - _names_cache["at"] < SNAPSHOT_TTL:
+        return _names_cache["data"]
+    rows = _fs_all_attributes()
+    data = [{"code": r.get("sa2_code_2021"), "name": r.get("sa2_name_2021"),
+             "state": _state_from_code(r.get("sa2_code_2021"))}
+            for r in rows]
+    _names_cache["data"], _names_cache["at"] = data, now
+    return data
+
+
+def match_sa2_for_suburb(name, state):
+    """Match a suburb name to an ABS SA2 within its state (normalised
+    equality, then unique prefix match). Returns sa2_code or None."""
+    want = re.sub(r"[^a-z0-9]+", " ", str(name or "")).lower().strip()
+    if len(want) < 3:
+        return None
+    st = str(state or "").strip().upper()
+    candidates = [s for s in _sa2_names()
+                  if not st or s["state"] == st]
+    if not candidates:
+        return None
+    norm = [(s, re.sub(r"[^a-z0-9]+", " ", str(s["name"] or "")).lower().strip())
+            for s in candidates]
+    exact = [s for s, n in norm if n == want]
+    if len(exact) == 1:
+        return exact[0]["code"]
+    prefixes = [s for s, n in norm if n.startswith(want) or want.startswith(n)]
+    if len(prefixes) == 1:
+        return prefixes[0]["code"]
+    return None
 
 METRIC_DEFS = {
     "tenure_4": {"label": "Renting households", "unit": "%", "dp": 1},
@@ -56,6 +105,13 @@ METRIC_DEFS = {
                  "note": "Owners paying >30% of income on the mortgage"},
     "erp_p_75p_pc": {"label": "Residents 75+", "unit": "%", "dp": 1},
     "publich_1_pc": {"label": "Public housing", "unit": "%", "dp": 1},
+    "tenure_owned": {"label": "Owned outright", "unit": "%", "dp": 1},
+    "tenure_3": {"label": "Owned with mortgage", "unit": "%", "dp": 1},
+    "house_3_pc": {"label": "Spare bedrooms", "unit": "%", "dp": 1},
+    "unpaidw_3": {"label": "Volunteers", "unit": "%", "dp": 1},
+    "vehd_1_pc": {"label": "Households without a car", "unit": "%", "dp": 1},
+    "hhtype_6": {"label": "Avg household size", "unit": "", "dp": 1},
+    "ing_erp_p_pc": {"label": "First Nations residents", "unit": "%", "dp": 1},
 }
 
 # (key, question, headline per status, [(metric, "high"|"low"), ...]).
@@ -166,7 +222,8 @@ def _percentiles(values):
 
 
 def build_benchmarks(rows):
-    """Pure: rows of SA2 attributes -> percentile benchmarks per field."""
+    """Pure: rows of SA2 attributes -> percentile benchmarks per field,
+    nationally and per state."""
     out = {}
     for f in FIELDS[2:]:  # skip the two id fields
         p = _percentiles([row.get(f) for row in rows])
@@ -175,9 +232,24 @@ def build_benchmarks(rows):
     out["jobs_per_dwelling"] = _percentiles(
         r["leed_4"] / r["dwell_7"] for r in rows
         if r.get("leed_4") is not None and r.get("dwell_7"))
+
+    # Per-state buckets: first digit of the SA2 code identifies the state.
+    by_state = {}
+    for row in rows:
+        st = _state_from_code(row.get("sa2_code_2021"))
+        if st:
+            by_state.setdefault(st, []).append(row)
+    states = {}
+    for st, srows in by_state.items():
+        sb = {}
+        for f in FIELDS[2:]:
+            p = _percentiles([r.get(f) for r in srows])
+            if p:
+                sb[f] = p
+        states[st] = sb
     return {"n": len(rows),
             "builtAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "fields": out}
+            "fields": out, "states": states}
 
 
 def load_benchmarks():
@@ -240,6 +312,7 @@ def point_lookup(lat, lon):
     a["jobs_per_dwelling"] = (a["leed_4"] / a["dwell_7"]
                               if a.get("leed_4") is not None and a.get("dwell_7")
                               else None)
+    a["state"] = _state_from_code(a.get("sa2_code_2021"))
     return a
 
 
@@ -348,6 +421,7 @@ def point_endpoint():
     return jsonify({"ok": True, "data": {
         "sa2": {"code": attrs.get("sa2_code_2021"),
                 "name": attrs.get("sa2_name_2021")},
+        "state": attrs.get("state"),
         "values": {k: attrs.get(k) for k in list(METRIC_DEFS) + ["erp_p_20"]},
         "verdicts": verdicts,
         "overall": overall,

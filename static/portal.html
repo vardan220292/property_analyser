@@ -168,6 +168,24 @@
     </div>
   </main>
 
+  <div id="report-dialog" class="report-dialog hidden" role="dialog" aria-modal="true" aria-label="Choose report sections">
+    <div class="report-dialog-panel">
+      <div class="report-dialog-head">
+        <div><div class="dash-eyebrow">PDF REPORT</div><h2>Choose report sections</h2></div>
+        <button id="report-dialog-x" class="icon-btn" title="Close">&times;</button>
+      </div>
+      <div class="hint">Tick the sections to include. Sections with no data are skipped automatically.</div>
+      <div id="report-dialog-groups"></div>
+      <div class="report-dialog-actions">
+        <button id="report-dialog-select-all" class="secondary">Select all</button>
+        <span class="spacer"></span>
+        <span id="report-dialog-msg" class="hint"></span>
+        <button id="report-dialog-cancel" class="secondary">Cancel</button>
+        <button id="report-dialog-download" class="primary">Save as PDF</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Vendored locally in static/vendor (no CDN) -->
   <script src="/vendor/leaflet/leaflet.js"></script>
   <script src="/vendor/chart.umd.js"></script>

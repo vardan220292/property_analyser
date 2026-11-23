@@ -98,16 +98,25 @@ def ensure_client_profile(user_id, ba_user_id, phone="", notes=""):
 
 
 def create_snapshot_presentation(ba_user_id, client_user_id, scenario_row,
-                                 title, expires_at):
+                                 title, expires_at, extras=None):
     """Insert a share snapshot of one scenario. Returns (pid, raw_token).
     Portfolio items keep the token internal — only the portfolio's own
-    token is published to the client."""
+    token is published to the client. Optional extras (transient AI
+    research, e.g. listingCheck/areaSignals) ride the snapshot so the
+    client's PDF can include them."""
     token = _new_token()
+    snapshot = scenario_row["inputs_json"]
+    if extras:
+        try:
+            inputs = json.loads(snapshot)
+            snapshot = json.dumps(dict(inputs, extras=extras))
+        except ValueError:
+            pass
     pid = db.db().execute(
         "INSERT INTO presentations (ba_user_id, client_user_id, scenario_id, title, "
         "snapshot_json, share_token_hash, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)",
         (ba_user_id, client_user_id, scenario_row["id"], title,
-         scenario_row["inputs_json"], _sha256(token), expires_at),
+         snapshot, _sha256(token), expires_at),
     )
     return pid, token
 
@@ -180,8 +189,12 @@ def create_presentation():
     ensure_client_profile(client["id"], g.user["id"], body.get("phone") or "", body.get("notes") or "")
 
     title = (body.get("title") or scenario["name"]).strip()[:MAX_TITLE]
+    extras = body.get("extras") or {}
+    extras = {k: v for k, v in extras.items()
+              if k in ("listingCheck", "areaSignals") and v}
     pid, token = create_snapshot_presentation(g.user["id"], client["id"], scenario,
-                                              title, _expiry(body.get("expiresInDays")))
+                                              title, _expiry(body.get("expiresInDays")),
+                                              extras)
     _log_event(pid, g.user["id"], "shared", f"Shared with {client['email']}")
     row = db.db().fetch_one("SELECT * FROM presentations WHERE id = ?", (pid,))
     data = _row_out(row)

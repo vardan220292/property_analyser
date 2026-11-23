@@ -20,6 +20,7 @@ band (±10% of the latest suburb median) — a guide, not a valuation.
 """
 
 import glob
+import json
 import os
 import re
 
@@ -183,40 +184,63 @@ def ingest(paths=None):
 
 @bp.get("/valuation")
 def valuation():
-    """Suburb median guide: series + latest median ±10% band."""
+    """Suburb median guide: sold-data series (VIC) + latest median ±10% band.
+    Other states fall back to the suburb record's median (AI-researched or
+    manually entered) so every state has a guide once the suburb has data."""
     suburb = _normalise_suburb(request.args.get("suburb") or "")
     state = (request.args.get("state") or "").strip().upper()[:3]
+    postcode = (request.args.get("postcode") or "").strip()[:5]
     if not suburb or len(suburb) < 3:
         return jsonify({"ok": False, "error": "suburb required"}), 400
-    if state != "VIC":
-        return jsonify({"ok": True, "data": {"available": False,
-                        "reason": "free sold data is VIC-only (other states are paid products)"}})
+
     rows = db.db().fetch_all(
         "SELECT dwelling_type, period, median, source FROM suburb_sales "
         "WHERE state = ? AND suburb = ? ORDER BY dwelling_type, period",
         (state, suburb))
-    if not rows:
-        return jsonify({"ok": True, "data": {"available": False,
-                        "reason": "no suburb match ingested yet — check spelling "
-                                  "or run sales.py after adding the VPSR files"}})
-    series, latest, source = {}, None, ""
-    for r in rows:
-        series.setdefault(r["dwelling_type"], []).append(
-            {"period": r["period"], "median": r["median"]})
-        if r["median"] is not None:
-            cur = (r["dwelling_type"], r["period"], r["median"])
-            if latest is None or cur[1] > latest[1]:
-                latest = cur
-            source = r["source"] or source
-    data = {"available": True, "state": state, "suburb": suburb.title(),
-            "series": series, "source": source}
-    if latest:
-        data["latest"] = {"dwellingType": latest[0], "period": latest[1],
-                          "median": latest[2]}
-        data["guide"] = {"low": round(latest[2] * 0.9), "high": round(latest[2] * 1.1),
-                         "note": "Suburb-median guide (±10%) — an indication "
-                                 "from sold-data medians, not a valuation"}
-    return jsonify({"ok": True, "data": data})
+    if rows:
+        series, latest, source = {}, None, ""
+        for r in rows:
+            series.setdefault(r["dwelling_type"], []).append(
+                {"period": r["period"], "median": r["median"]})
+            if r["median"] is not None:
+                cur = (r["dwelling_type"], r["period"], r["median"])
+                if latest is None or cur[1] > latest[1]:
+                    latest = cur
+                source = r["source"] or source
+        data = {"available": True, "state": state, "suburb": suburb.title(),
+                "series": series, "source": source}
+        if latest:
+            data["latest"] = {"dwellingType": latest[0], "period": latest[1],
+                              "median": latest[2]}
+            data["guide"] = {"low": round(latest[2] * 0.9), "high": round(latest[2] * 1.1),
+                             "note": "Suburb-median guide (±10%) — an indication "
+                                     "from sold-data medians, not a valuation"}
+        return jsonify({"ok": True, "data": data})
+
+    # All-states fallback: the suburb record's median with its stamped source.
+    srow = db.db().fetch_one(
+        "SELECT name, median_price, updated_at, sources_json FROM suburbs "
+        "WHERE state = ? AND (LOWER(name) = LOWER(?) OR (postcode = ? AND postcode != '')) "
+        "AND median_price IS NOT NULL ORDER BY id",
+        (state, suburb, postcode))
+    if srow and srow["median_price"]:
+        sources = json.loads(srow["sources_json"] or "{}").get("medianPrice") or {}
+        median = srow["median_price"]
+        return jsonify({"ok": True, "data": {
+            "available": True, "state": state, "suburb": (srow["name"] or suburb).title(),
+            "series": {},
+            "latest": {"dwellingType": "houses", "median": median,
+                       "period": sources.get("asOf") or (srow["updated_at"] or "")[:7]},
+            "guide": {"low": round(median * 0.9), "high": round(median * 1.1),
+                      "note": "Suburb-median guide (±10%) — from the suburb's recorded "
+                              "median (AI-researched or entered), not a valuation"},
+            "source": sources.get("source") or "suburb record"}})
+
+    reason = ("no sold-price series ingested and no suburb median on record — "
+              "add the suburb or run AI suburb evidence")
+    if state != "VIC":
+        reason = "free sold data is VIC-only; " + reason
+    return jsonify({"ok": True, "data": {"available": False, "reason": reason}})
 
 
 if __name__ == "__main__":

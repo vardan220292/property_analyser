@@ -452,6 +452,9 @@
     state.attachments = d.attachments || [];
     state.original = JSON.parse(JSON.stringify(d.snapshot));
     state.inputs = JSON.parse(JSON.stringify(d.snapshot));
+    // AI research payload rides the snapshot — kept out of model inputs
+    state.extras = state.inputs.extras || null;
+    delete state.inputs.extras;
     state.baseProjectionYears = state.inputs.projectionYears || 20;
     $('#p-title').textContent = d.title || 'Property proposal';
     $('#p-adjusted').classList.toggle('hidden', !d.usingMyAdjustments);
@@ -468,10 +471,118 @@
   }
 
   // ------------------------------------------------------------------
+  // Report section picker (modular reports — keys mirror _SECTION_ORDER
+  // in report.py and REPORT_SECTIONS in app.js)
+  // ------------------------------------------------------------------
+
+  const REPORT_SECTIONS = [
+    { group: 'Core numbers', items: [
+      ['cashflow', 'Cash flow — first year'],
+      ['whoPays', 'Who pays the cost?'],
+      ['projections', 'Projections over the hold'],
+      ['exit', 'Exit & CGT'],
+      ['properties', 'Per-property breakdown'],
+    ] },
+    { group: 'Intelligence', items: [
+      ['propertyIntel', 'Property intelligence (parcel, zoning, hazards)'],
+      ['dealCheck', 'Deal Check verdicts'],
+      ['checks', 'Due-diligence checklist'],
+      ['replacement', 'Replacement value'],
+      ['listingCheck', 'Listing check'],
+      ['areaSignals', 'Area signals'],
+    ] },
+    { group: 'Evidence & area', items: [
+      ['rentalEvidence', 'Rental evidence'],
+      ['salesEvidence', 'Sales evidence'],
+      ['suburb', 'Suburb snapshot'],
+    ] },
+    { group: 'Attachments', items: [
+      ['documents', 'Attached documents'],
+    ] },
+  ];
+
+  function savedReportSections() {
+    try {
+      const v = JSON.parse(localStorage.getItem('pa_report_sections') || '[]');
+      return Array.isArray(v) ? v.filter((k) => typeof k === 'string') : [];
+    } catch (e) { return []; }
+  }
+
+  function closePortalReportDialog() {
+    $('#report-dialog').classList.add('hidden');
+  }
+
+  function openPortalReportDialog() {
+    const saved = savedReportSections();
+    $('#report-dialog-groups').innerHTML = REPORT_SECTIONS.map((g) => `
+      <div class="report-dialog-group">
+        <div class="report-dialog-group-label">${g.group}</div>
+        ${g.items.map(([key, label]) => `
+          <label class="report-dialog-check"><input type="checkbox" data-report-section="${key}"
+            ${!saved.length || saved.includes(key) ? 'checked' : ''}><span>${label}</span></label>`).join('')}
+      </div>`).join('');
+    $('#report-dialog').classList.remove('hidden');
+  }
+
+  function wirePortalReportDialog() {
+    const overlay = $('#report-dialog');
+    if (!overlay) return;
+    $('#report-dialog-x').addEventListener('click', closePortalReportDialog);
+    $('#report-dialog-cancel').addEventListener('click', closePortalReportDialog);
+    overlay.addEventListener('mousedown', (ev) => { if (ev.target === overlay) closePortalReportDialog(); });
+    $('#report-dialog-select-all').addEventListener('click', () => {
+      overlay.querySelectorAll('input[data-report-section]').forEach((cb) => { cb.checked = true; });
+    });
+    $('#report-dialog-download').addEventListener('click', async () => {
+      const keys = [...overlay.querySelectorAll('input[data-report-section]:checked')]
+        .map((cb) => cb.dataset.reportSection);
+      if (!keys.length) { msg('#report-dialog-msg', 'Pick at least one section'); return; }
+      localStorage.setItem('pa_report_sections', JSON.stringify(keys));
+      closePortalReportDialog();
+      try {
+        await downloadPortalReport(keys);
+      } catch (e) {
+        window.print(); // offline / network error — browser print still works
+      }
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && !overlay.classList.contains('hidden')) closePortalReportDialog();
+    });
+  }
+
+  async function downloadPortalReport(sections) {
+    const payload = buildReportPayload();
+    if (Array.isArray(sections) && sections.length) payload.sections = sections;
+    const resp = await fetch(`/api/portal/presentation/${state.pid}/report`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + state.jwt,
+      },
+      body: JSON.stringify(payload),
+    });
+    if ((resp.headers.get('Content-Type') || '').includes('pdf')) {
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = ($('#p-title').textContent || 'proposal').replace(/[^\w -]/g, '') + '.pdf';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } else {
+      // WeasyPrint not installed server-side — open the print HTML.
+      const html = await resp.text();
+      const w = window.open('', '_blank');
+      w.document.write(html);
+      w.document.close();
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Actions
   // ------------------------------------------------------------------
 
   function bindActions() {
+    wirePortalReportDialog();
     $('#p-reset').addEventListener('click', () => {
       state.inputs = JSON.parse(JSON.stringify(state.original));
       state.targetProp = 0;
@@ -512,34 +623,7 @@
       localStorage.removeItem(TOKEN_KEY);
       location.href = '/portal';
     });
-    $('#p-print').addEventListener('click', async () => {
-      try {
-        const resp = await fetch(`/api/portal/presentation/${state.pid}/report`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: 'Bearer ' + state.jwt,
-          },
-          body: JSON.stringify(buildReportPayload()),
-        });
-        if ((resp.headers.get('Content-Type') || '').includes('pdf')) {
-          const blob = await resp.blob();
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = ($('#p-title').textContent || 'proposal').replace(/[^\w -]/g, '') + '.pdf';
-          a.click();
-          URL.revokeObjectURL(a.href);
-        } else {
-          // WeasyPrint not installed server-side — open the print HTML.
-          const html = await resp.text();
-          const w = window.open('', '_blank');
-          w.document.write(html);
-          w.document.close();
-        }
-      } catch (e) {
-        window.print(); // offline / network error — browser print still works
-      }
-    });
+    $('#p-print').addEventListener('click', openPortalReportDialog);
   }
 
   async function decide(action, doneMsg) {
@@ -643,6 +727,9 @@
       subject: { price: prop.purchasePrice, weeklyRent: prop.weeklyRent,
                  landValue: prop.landValue, bedrooms: prop.bedrooms,
                  address: prop.address },
+      // transient AI research shared by the BA rides the presentation
+      // snapshot and is rendered by the server's report sections
+      ...((state.extras) || {}),
     };
   }
 

@@ -37,6 +37,10 @@ def branding_out(ba_user_id):
         "accentColor": (r and r["accent_color"]) or "",
         "logoUrl": (r and r["logo_url"]) or "",
         "tagline": (r and r["tagline"]) or "",
+        "phone": (r and r["phone"]) or "",
+        "email": (r and r["email"]) or "",
+        "website": (r and r["website"]) or "",
+        "officeAddress": (r and r["office_address"]) or "",
     }
 
 
@@ -81,16 +85,22 @@ def put_branding():
     if color and not MAX_COLOR.match(color):
         return jsonify({"ok": False, "error": "accentColor must be a #rrggbb hex colour"}), 400
     db.db().execute(
-        "INSERT INTO ba_profiles (user_id, business_name, accent_color, logo_url, tagline) "
-        "VALUES (?, ?, ?, ?, ?) "
+        "INSERT INTO ba_profiles (user_id, business_name, accent_color, logo_url, "
+        "tagline, phone, email, website, office_address) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(user_id) DO UPDATE SET business_name = excluded.business_name, "
         "accent_color = excluded.accent_color, logo_url = excluded.logo_url, "
-        "tagline = excluded.tagline",
+        "tagline = excluded.tagline, phone = excluded.phone, email = excluded.email, "
+        "website = excluded.website, office_address = excluded.office_address",
         (user["id"],
          (body.get("businessName") or "").strip()[:80],
          color,
          (body.get("logoUrl") or "").strip()[:300],
-         (body.get("tagline") or "").strip()[:140]))
+         (body.get("tagline") or "").strip()[:140],
+         (body.get("phone") or "").strip()[:30],
+         (body.get("email") or "").strip()[:80],
+         (body.get("website") or "").strip()[:120],
+         (body.get("officeAddress") or "").strip()[:140]))
     return jsonify({"ok": True, "data": branding_out(user["id"])})
 
 

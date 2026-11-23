@@ -212,12 +212,16 @@ _SCHEMA = [
     """,
     """
     CREATE TABLE IF NOT EXISTS ba_profiles (
-        user_id       INTEGER PRIMARY KEY,
-        business_name TEXT NOT NULL DEFAULT '',
-        accent_color  TEXT NOT NULL DEFAULT '',
-        logo_url      TEXT NOT NULL DEFAULT '',
-        tagline       TEXT NOT NULL DEFAULT '',
-        created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+        user_id        INTEGER PRIMARY KEY,
+        business_name  TEXT NOT NULL DEFAULT '',
+        accent_color   TEXT NOT NULL DEFAULT '',
+        logo_url       TEXT NOT NULL DEFAULT '',
+        tagline        TEXT NOT NULL DEFAULT '',
+        phone          TEXT NOT NULL DEFAULT '',
+        email          TEXT NOT NULL DEFAULT '',
+        website        TEXT NOT NULL DEFAULT '',
+        office_address TEXT NOT NULL DEFAULT '',
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """,
     """
@@ -469,6 +473,33 @@ class Database:
             if "suburb_id" not in cols:
                 self._exec_raw(
                     "ALTER TABLE scenarios ADD COLUMN suburb_id INTEGER")
+            # Migration: ba_profiles created before BA contact fields existed.
+            bp_cols = self._table_cols("ba_profiles")
+            for col in ("phone", "email", "website", "office_address"):
+                if col not in bp_cols:
+                    self._exec_raw(
+                        f"ALTER TABLE ba_profiles ADD COLUMN {col} "
+                        "TEXT NOT NULL DEFAULT ''")
+            # Migration: suburb rows link to their ABS SA2 (census crosswalk).
+            sub_cols = self._table_cols("suburbs")
+            if "sa2_code" not in sub_cols:
+                self._exec_raw("ALTER TABLE suburbs ADD COLUMN sa2_code TEXT")
+            self._exec_raw("""
+                CREATE TABLE IF NOT EXISTS metric_history (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    subject_type TEXT NOT NULL DEFAULT 'suburb',
+                    subject_id   INTEGER NOT NULL,
+                    metric       TEXT NOT NULL,
+                    period       TEXT NOT NULL,
+                    value        REAL,
+                    source       TEXT NOT NULL DEFAULT '',
+                    recorded_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(subject_type, subject_id, metric, period)
+                )
+            """)
+            self._exec_raw(
+                "CREATE INDEX IF NOT EXISTS idx_metric_history_lookup "
+                "ON metric_history (subject_type, subject_id, metric, period)")
             # Role column for pre-platform DBs.
             if "role" not in self._table_cols("users"):
                 self._exec_raw(

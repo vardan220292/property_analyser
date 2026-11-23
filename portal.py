@@ -287,56 +287,7 @@ def approve(pid):
 # browser print-to-PDF fallback.
 # ---------------------------------------------------------------------------
 
-_PDF_CSS = """
-  @page {
-    size: A4;
-    margin: 30mm 15mm 20mm 15mm;
-    @top-center { content: element(pagehead); }
-    @bottom-left { content: element(pagefoot); }
-    @bottom-right { content: "Page " counter(page) " of " counter(pages);
-                    font-size: 8px; color: #94a3b8; }
-  }
-  @page :first { @top-center { content: none; } }
-  .pagehead { position: running(pagehead); width: 100%; display: flex;
-              align-items: center; gap: 7px; border-bottom: 1.5px solid ACCENT;
-              padding-bottom: 4px; font-size: 10px; font-weight: 700;
-              color: ACCENT; }
-  .pagehead img { height: 20px; padding: 2px; border: 1px solid #e2e8f0;
-                  border-radius: 5px; background: #fff; }
-  .pagefoot { position: running(pagefoot); width: 100%; font-size: 8px;
-              color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 4px; }
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #0f172a;
-         margin: 0; font-size: 12px; }
-  .head { display: flex; justify-content: space-between; align-items: center;
-          border-bottom: 3px solid ACCENT; padding-bottom: 12px; margin-bottom: 18px; }
-  .brandrow { display: flex; align-items: center; gap: 10px; }
-  .brandrow img { height: 40px; padding: 3px; border: 1px solid #e2e8f0;
-                  border-radius: 8px; background: #fff; }
-  .brand { font-size: 17px; font-weight: 700; color: ACCENT; }
-  .tagline { color: #64748b; font-size: 10px; }
-  .client { color: #64748b; font-size: 11px; margin-top: 2px; }
-  h1 { font-size: 20px; margin: 0 0 14px; }
-  .cards { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
-  .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; min-width: 150px; }
-  .card .label { font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: .4px; }
-  .card .value { font-size: 16px; font-weight: 700; margin: 3px 0; }
-  .card .sub { font-size: 9px; color: #64748b; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
-  th { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .4px; }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  tr.bold td { font-weight: 700; }
-  .bars { display: flex; align-items: flex-end; gap: 2px; height: 64px;
-          margin: 6px 0 14px; }
-  .bars .bar { flex: 1; min-width: 2px; border-radius: 2px 2px 0 0; }
-  .bars-label { color: #475569; font-size: 9px; text-transform: uppercase;
-                letter-spacing: .4px; margin-top: 14px; }
-  .zero { border-bottom: 1px solid #cbd5e1; height: 1px; }
-  .foot { color: #94a3b8; font-size: 9px; margin-top: 24px; border-top: 1px solid #e2e8f0;
-          padding-top: 8px; }
-  .docs { margin: 0 0 8px; padding: 0; list-style: none; }
-  .docs li { padding: 3px 0; border-bottom: 1px solid #f1f5f9; }
-"""
+_PDF_CSS = report_mod.PDF_CSS
 
 
 def _bars(values, color_pos, color_neg):
@@ -402,27 +353,19 @@ def _pdf_html(row, data):
                       '<ul class="docs">' + items + '</ul>'
                       '<div class="source" style="color:#94a3b8;font-size:9px">'
                       'All documents are available to open on your shared link.</div>')
-    small_logo = (f'<img src="{_h(data.get("logo", ""))}" alt="">'
-                  if data.get('logo') else '')
-    runners = (f'<div class="pagehead">{small_logo}<span>{_h(data.get("baName", ""))}</span>'
-               f'<span style="margin-left:auto;font-weight:400;color:#64748b">'
-               f'{_h(data.get("client", "") and "Prepared for " + data.get("client", ""))}</span></div>'
-               f'<div class="pagefoot">{_h(data.get("baName", ""))} · '
-               f'{_h(data.get("disclaimer", "Estimates only — not financial or tax advice."))}</div>')
+    brand = data.get("brand") or {}
+    head = report_mod.report_head_html(brand, data.get("logo") or "",
+                                       data.get("client", ""),
+                                       data.get("title", "Property proposal"))
+    runners = report_mod.report_runners_html(brand, data.get("logo") or "",
+                                             data.get("client", ""))
+    head = head.replace("</h1>", "</h1>", 1)  # keep shared structure
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>{_h(data.get('title', 'Proposal'))}</title>
 <style>{css}</style></head>
 <body>
   {runners}
-  <div class="head">
-    <div class="brandrow">{'<img src="' + _h(data.get('logo', '')) + '" alt="logo">' if data.get('logo') else ''}<div>
-      <div class="brand">{_h(data.get('baName', ''))}</div>
-      <div class="tagline">{_h(data.get('tagline', ''))}</div>
-      <div class="client">Prepared for {_h(data.get('client', ''))}</div>
-    </div></div>
-    <div class="client">{_h(data.get('date', ''))}</div>
-  </div>
-  <h1>{_h(data.get('title', 'Property proposal'))}</h1>
+  {head}
   <div class="cards">{cards}</div>
   {facts_block}
   <h1 style="font-size:14px">Cash flow — first year</h1>
@@ -452,6 +395,7 @@ def pdf(pid):
         data.setdefault("logo", report_mod._logo_data_uri(brand["logoUrl"]))
     if brand.get("tagline"):
         data.setdefault("tagline", brand["tagline"])
+    data.setdefault("brand", brand)
     data.setdefault("date", datetime.utcnow().strftime("%d %b %Y"))
     data.setdefault(
         "disclaimer",

@@ -140,23 +140,46 @@ def _refresh_national():
 
 
 def _national():
-    """Seeded NATIONAL with live values overlaid where the SDMX fetch works.
+    """Seeded NATIONAL with live values overlaid where the SDMX fetch works,
+    then AI-web-search values (ai_research.py) for the remaining gaps.
     Overlays carry live:true + fetched date; everything else says 'bundled'."""
     now = time.time()
     if now - _sdmx_cache["at"] > SDMX_TTL_SECONDS:
         _sdmx_cache["data"] = _refresh_national()
         _sdmx_cache["at"] = now
     live = _sdmx_cache["data"] or {}
+    ai = None
+    if now - _ai_national["at"] < SDMX_TTL_SECONDS:
+        ai = _ai_national["data"] or {}
     out = {}
     for key, item in NATIONAL.items():
         entry = dict(item)
         if key in live:
             entry.update({"value": live[key], "live": True,
                           "label": f"Fetched {datetime.utcnow().strftime('%d %b %Y')} — {item['label']}"})
+        elif ai and key in ai:
+            ai_item = ai[key]
+            entry.update({"value": ai_item["value"],
+                          "unit": ai_item.get("unit") or item["unit"],
+                          "live": True, "liveVia": "AI web search",
+                          "label": f"{ai_item.get('label') or item['label']} — AI web search "
+                                   f"{datetime.utcnow().strftime('%d %b %Y')}",
+                          "source": ai_item.get("source") or item["source"]})
         else:
             entry["live"] = False
         out[key] = entry
     return out
+
+
+# AI-web-search fallback for indicators the SDMX feed can't fill (the feed is
+# CloudFront-blocked on some networks). Adopted by ai_research.markets_ai_refresh.
+_ai_national = {"data": None, "at": 0.0}
+
+
+def set_ai_national(indicators):
+    if isinstance(indicators, dict) and indicators:
+        _ai_national["data"] = indicators
+        _ai_national["at"] = time.time()
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +303,25 @@ def _load_prices():
     return data
 
 
+def _growth_window(values, quarters):
+    """% change over the last `quarters` quarters of a median-price series.
+    None when the window or baseline is unavailable/zero."""
+    window = values[-quarters:] if quarters and len(values) >= quarters + 1 else None
+    if not window:
+        return None
+    first, last = window[0], window[-1]
+    if not first or not last:
+        return None
+    return round((last - first) / first * 100, 1)
+
+
+def _growth_series(values):
+    return {"1yr": _growth_window(values, 5),
+            "3yr": _growth_window(values, 13),
+            "5yr": _growth_window(values, 21),
+            "10yr": _growth_window(values, 41)}
+
+
 @bp.get("/prices")
 def prices():
     """Median price history per state. `state` filter optional; the last
@@ -294,11 +336,18 @@ def prices():
     out_states = {k: {area: {kind: v[kind][keep] for kind in v}
                       for area, v in areas.items()}
                   for k, areas in data["states"].items() if not want or k == want}
+    # Growth windows (houses, capital series) per state — straight off the
+    # quarterly medians the app already holds.
+    growth = {}
+    for k, areas in data["states"].items():
+        cap = (areas.get("capital") or {}).get("houses") or []
+        growth[k] = _growth_series(cap)
     return jsonify({"ok": True, "data": {
         "source": data["source"],
         "release": data["release"],
         "unit": data["unit"],
         "periods": periods,
         "states": out_states,
+        "growth": growth,
         "capitals": CAPITALS,
     }})

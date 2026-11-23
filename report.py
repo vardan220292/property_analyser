@@ -74,11 +74,23 @@ def _overlays_for(inputs):
                 data = vic_intel.property_intel(float(lat), float(lon))
                 bf = data.get("bushfire") or {}
                 out["bushfireProne"] = bf.get("prone")
-            else:
+            elif state == "QLD":
                 import qld_intel
                 data = qld_intel.property_intel(float(lat), float(lon))
                 studies = (data.get("flood") or {}).get("studies") or []
                 out["floodStudies"] = [s.get("name") for s in studies if s.get("name")]
+            elif state:
+                import state_intel
+                data = state_intel.property_intel(float(lat), float(lon), state)
+                parcel = data.get("parcel") or {}
+                bf = data.get("bushfire") or {}
+                fl = data.get("flood") or {}
+                out["parcel"] = parcel
+                out["bushfireProne"] = bf.get("prone")
+                out["floodProne"] = fl.get("prone")
+                out["intel"] = {"provider": data.get("provider"),
+                                "fetchedAt": data.get("fetchedAt"),
+                                "sources": data.get("sources") or []}
     except Exception:
         pass
     return out
@@ -221,33 +233,42 @@ _PDF_CSS = """
     @top-center { content: element(pagehead); }
     @bottom-left { content: element(pagefoot); }
     @bottom-right { content: "Page " counter(page) " of " counter(pages);
-                    font-size: 8px; color: #94a3b8; }
+                    font-size: 8px; color: #94a3b8;
+                    vertical-align: top; padding-top: 4px; }
   }
   @page :first { @top-center { content: none; } }
   .pagehead { position: running(pagehead); width: 100%; display: flex;
-              align-items: center; gap: 7px; border-bottom: 1.5px solid ACCENT;
+              align-items: center; gap: 7px; border-bottom: 2px solid ACCENT;
               padding-bottom: 4px; font-size: 9.5px; font-weight: 700;
               color: ACCENT; }
   .pagehead img { height: 20px; padding: 2px; border: 1px solid #e2e8f0;
                   border-radius: 5px; background: #fff; }
-  .pagefoot { position: running(pagefoot); width: 100%; font-size: 8px;
-              color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 4px; }
+  .pagefoot { position: running(pagefoot); width: 100%; display: flex;
+              justify-content: space-between; align-items: baseline;
+              font-size: 8px; color: #64748b; border-top: 2px solid ACCENT;
+              padding-top: 4px; }
+  .pagefoot .contact { font-weight: 600; color: ACCENT; }
   body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #0f172a;
          margin: 0; font-size: 11px; }
+  /* Page-1 accent band: brand colour, white text, soft rounded corners. */
   .head { display: flex; justify-content: space-between; align-items: center;
-          border-bottom: 3px solid ACCENT; padding-bottom: 10px; margin-bottom: 14px; }
+          background: ACCENT; color: #ffffff; border-radius: 10px;
+          padding: 16px 18px; margin-bottom: 14px; }
   .brandrow { display: flex; align-items: center; gap: 10px; }
-  .brandrow img { height: 34px; padding: 3px; border: 1px solid #e2e8f0;
+  .brandrow img { height: 38px; padding: 3px; border: 1px solid rgba(255,255,255,.55);
                   border-radius: 7px; background: #fff; }
-  .brand { font-size: 16px; font-weight: 700; color: ACCENT; }
-  .tagline { color: #64748b; font-size: 10px; }
-  .client { color: #64748b; font-size: 10px; margin-top: 2px; }
-  h1 { font-size: 18px; margin: 0 0 10px; }
-  h1.sec { font-size: 13px; margin: 22px 0 8px; break-before: page; }
+  .brand { font-size: 17px; font-weight: 700; color: #ffffff; }
+  .tagline { color: rgba(255,255,255,.85); font-size: 10px; }
+  .client { color: rgba(255,255,255,.95); font-size: 10.5px; text-align: right;
+            line-height: 1.5; }
+  h1 { font-size: 18px; margin: 0 0 10px; color: ACCENT; }
+  h1.sec { font-size: 13px; margin: 22px 0 8px; break-before: page;
+           color: ACCENT; border-bottom: 2px solid ACCENT; padding-bottom: 4px; }
   h1.sec.first { break-before: auto; }
   h1.subsec { font-size: 11.5px; margin: 12px 0 6px; color: #334155; }
   .cards { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-  .card { border: 1px solid #e2e8f0; border-radius: 7px; padding: 8px 12px; min-width: 140px; }
+  .card { border: 1px solid #e2e8f0; border-left: 3px solid ACCENT;
+          border-radius: 7px; padding: 8px 12px; min-width: 140px; }
   .card .label { font-size: 8px; color: #64748b; text-transform: uppercase; letter-spacing: .4px; }
   .card .value { font-size: 14px; font-weight: 700; margin: 2px 0; }
   .card .sub { font-size: 8px; color: #64748b; }
@@ -255,9 +276,12 @@ _PDF_CSS = """
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
   th, td { text-align: left; padding: 4px 7px; border-bottom: 1px solid #e2e8f0; }
-  th { font-size: 9px; color: #475569; text-transform: uppercase; letter-spacing: .4px; }
+  th { font-size: 9px; color: #ffffff; background: ACCENT; text-transform: uppercase;
+       letter-spacing: .4px; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  tr.bold td { font-weight: 700; }
+  th.num { background: ACCENT; }
+  tbody tr:nth-child(even) td { background: #f8fafc; }
+  tr.bold td { font-weight: 700; background: #eef2ff; }
   .bars { display: flex; align-items: flex-end; gap: 2px; height: 58px; margin: 5px 0 10px; }
   .bars .bar { flex: 1; min-width: 2px; border-radius: 2px 2px 0 0; }
   .bars .zero { border-bottom: 1px solid #cbd5e1; height: 1px; }
@@ -282,6 +306,44 @@ _PDF_CSS = """
   .foot { color: #94a3b8; font-size: 8px; margin-top: 22px; border-top: 1px solid #e2e8f0;
           padding-top: 7px; }
 """
+
+# Public alias: portal.py keeps one shared source of truth for report styling.
+PDF_CSS = _PDF_CSS
+
+
+def report_head_html(brand, logo_uri, client, title):
+    """Page-1 accent header band (logo, BA brand, prepared-for, title)."""
+    brand = brand or {}
+    name = brand.get("businessName") or "Property Analyser"
+    logo = f'<img src="{_h(logo_uri)}" alt="logo">' if logo_uri else ""
+    tag_html = (f'<div class="tagline">{_h(brand.get("tagline"))}</div>'
+                if brand.get("tagline") else "")
+    client_html = f"Prepared for {_h(client)}<br>" if client else ""
+    return f"""
+  <div class="head">
+    <div class="brandrow">{logo}<div>
+      <div class="brand">{_h(name)}</div>{tag_html}
+    </div></div>
+    <div class="client">{client_html}{_h(datetime.utcnow().strftime("%d %b %Y"))}</div>
+  </div>
+  <h1>{_h(title)}</h1>"""
+
+
+def report_runners_html(brand, logo_uri, client):
+    """Running header (pages 2+) and footer with BA contact details."""
+    brand = brand or {}
+    name = brand.get("businessName") or "Property Analyser"
+    logo = f'<img src="{_h(logo_uri)}" alt="">' if logo_uri else ""
+    prepared = f"Prepared for {_h(client)}" if client else ""
+    contact = " · ".join(x for x in (brand.get("phone") or "",
+                                     brand.get("email") or "",
+                                     brand.get("website") or "",
+                                     brand.get("officeAddress") or "") if x)
+    contact_html = f'<span class="contact">{_h(contact)}</span>' if contact else ""
+    return (f'<div class="pagehead">{logo}<span>{_h(name)}</span>'
+            f'<span style="margin-left:auto;font-weight:400;color:#64748b">{prepared}</span></div>'
+            f'<div class="pagefoot"><span>{_h(name)}</span>{contact_html}'
+            f'<span style="margin-left:auto;color:#94a3b8">Estimates only — not financial or tax advice.</span></div>')
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +557,101 @@ def _section_checks(p):
     return ('<h1 class="sec">Due-diligence checklist</h1>'
             '<div class="note">Points to verify before committing — unknowns MUST be checked manually.</div>'
             + rows)
+
+
+def _yn(v):
+    if v is None or v is False:
+        return "No" if v is False else "Unknown"
+    return "Yes"
+
+
+def _section_property_intel(ctx):
+    """Government parcel intelligence + hazard checks (all-states)."""
+    ov = ctx.get("overlays") or {}
+    parcel = ov.get("parcel") or {}
+    intel = ov.get("intel") or {}
+    if not parcel and ov.get("bushfireProne") is None and ov.get("floodProne") is None:
+        return ""
+    rows = []
+    row = lambda k, v: rows.append(
+        f'<div class="kv"><span class="k">{_h(k)}</span> <strong>{_h(str(v))}</strong></div>')
+    if parcel.get("id"):
+        row("Parcel", parcel["id"])
+    if parcel.get("areaSqm"):
+        row("Parcel area", f"{parcel['areaSqm']:,.0f} m²")
+    if parcel.get("locality"):
+        row("Locality/address", parcel["locality"])
+    if ov.get("zoning"):
+        z = ov["zoning"]
+        row("Zoning", (str(z.get("category") or "") + " " + str(z.get("name") or "")).strip()
+            or "—")
+    for k, v in (parcel.get("extra") or {}).items():
+        label = re.sub(r"(?<!^)(?=[A-Z])", " ", str(k))
+        if v not in (None, ""):
+            row(label, v)
+    if ov.get("bushfireProne") is not None:
+        row("Bushfire prone", _yn(ov.get("bushfireProne")))
+    if ov.get("floodProne") is not None:
+        row("Mapped 1% AEP flood hazard", _yn(ov.get("floodProne")))
+    if not rows:
+        return ""
+    src_bits = []
+    for s in intel.get("sources") or []:
+        src_bits.append(_h(s.get("label", "")))
+    source = (f'<div class="note">Source: {"; ".join(src_bits) or "government open data"}'
+              + (f' — fetched {intel.get("fetchedAt", "")}' if intel.get("fetchedAt") else '')
+              + '. Government data, not a substitute for professional surveys.</div>')
+    return ('<h1 class="sec">Property intelligence</h1>' + "".join(rows) + source)
+
+
+def _section_listing_check(p):
+    """AI listing check — included only when the user ran it this session."""
+    lc = p.get("listingCheck") or {}
+    if not lc:
+        return ""
+    rows = []
+    row = lambda k, v: rows.append(
+        f'<div class="kv"><span class="k">{_h(k)}</span> <strong>{_h(str(v))}</strong></div>')
+    row("On market now", "Yes" if lc.get("onMarket") else "No")
+    if lc.get("askingPrice"):
+        row("Asking", f"${lc['askingPrice']:,.0f}" + (f" ({lc['agent']})" if lc.get("agent") else ""))
+    if lc.get("listedDate"):
+        row("Listed", lc["listedDate"])
+    if lc.get("lastSoldPrice"):
+        sold = f"${lc['lastSoldPrice']:,.0f}"
+        if lc.get("lastSoldDate"):
+            sold += f" ({lc['lastSoldDate']})"
+        row("Last sold", sold)
+    src = (f' — {lc.get("source", "")}' if lc.get("source") else "")
+    link = (f' <a href="{_h(lc.get("url"))}">{_h(lc.get("url"))}</a>' if lc.get("url") else "")
+    return ('<h1 class="sec">Listing check (AI research)</h1>' + "".join(rows)
+            + f'<div class="note">AI web search · confidence {_h(lc.get("confidence", "low"))}{src}{link}'
+              '. Verify on the linked page before relying on this.</div>')
+
+
+def _section_area_signals(p):
+    """AI infrastructure/planning signals — only when run this session."""
+    signals = p.get("areaSignals") or []
+    if not signals:
+        return ""
+    status_label = {"proposed": "Proposed", "under_construction": "Under construction",
+                    "completed": "Completed"}
+    rows = []
+    for s in signals:
+        bits = [status_label.get(s.get("status"), s.get("status") or "")]
+        if s.get("timeframe"):
+            bits.append(f"ETA {s['timeframe']}")
+        if s.get("distanceKm") is not None:
+            bits.append(f"~{s['distanceKm']} km")
+        name = _h(s.get("name", ""))
+        if s.get("url"):
+            name = f'<a href="{_h(s["url"])}">{name}</a>'
+        rows.append(f'<div class="kv"><span class="k">{_h((s.get("type") or "").replace("_", " ").title())}</span> '
+                    f'<strong>{name}</strong> <span>{_h(" · ".join(b for b in bits if b))}</span></div>')
+    return ('<h1 class="sec">Infrastructure & planning signals (AI research)</h1>'
+            + "".join(rows)
+            + '<div class="note">AI web search — open each project link to verify scope '
+              'and status before relying on it.</div>')
 
 
 def _section_replacement(p):
@@ -787,6 +944,23 @@ def _section_properties(payload, accent):
     return out
 
 
+# Modular reports: every toggleable section in render order. A payload may
+# pass payload["sections"] (list of these keys); absent/empty/unrecognised
+# selections fall back to the full report.
+_SECTION_ORDER = ("cashflow", "whoPays", "projections", "exit", "properties",
+                  "propertyIntel", "listingCheck", "areaSignals", "dealCheck",
+                  "checks", "replacement", "rentalEvidence", "salesEvidence",
+                  "suburb", "documents")
+
+
+def _selected_sections(payload):
+    provided = payload.get("sections")
+    if not isinstance(provided, list):
+        return set(_SECTION_ORDER)
+    sel = {k for k in _SECTION_ORDER if k in provided}
+    return sel or set(_SECTION_ORDER)
+
+
 def build_report_html(payload, ctx):
     accent = (payload.get("accent") or "#6366f1").strip()
     if not _h(accent) or not accent.startswith("#"):
@@ -796,27 +970,13 @@ def build_report_html(payload, ctx):
     logo_uri = _logo_data_uri(brand.get("logoUrl"))
     logo_html = f'<img src="{logo_uri}" alt="logo">' if logo_uri else ""
     name = brand.get("businessName") or (payload.get("baName") or "Property Analyser")
-    tagline = brand.get("tagline") or ""
     client = payload.get("client") or ""
-    date = datetime.utcnow().strftime("%d %b %Y")
+    title = payload.get("title") or "Property report"
 
-    head = f"""
-  <div class="head">
-    <div class="brandrow">{logo_html}<div>
-      <div class="brand">{_h(name)}</div>
-      <div class="tagline">{_h(tagline)}</div>
-    </div></div>
-    <div class="client">Prepared for {_h(client)}<br>{_h(date)}</div>
-  </div>
-  <h1>{_h(payload.get("title") or "Property report")}</h1>
-"""
-    # Running header/footer on every page (WeasyPrint margin boxes).
-    small_logo = f'<img src="{logo_uri}" alt="">' if logo_uri else ""
-    runners = (f'<div class="pagehead">{small_logo}<span>{_h(name)}</span>'
-               f'<span style="margin-left:auto;font-weight:400;color:#64748b">'
-               f'{_h(client and "Prepared for " + client)}</span></div>'
-               f'<div class="pagefoot">{_h(name)} · {_h(tagline or "")} '
-               f'Estimates only — not financial or tax advice.</div>')
+    head = report_head_html(brand, logo_uri, client, title)
+    # Running header/footer on every page (WeasyPrint margin boxes); the
+    # footer carries the BA's contact details when branding has them.
+    runners = report_runners_html(brand, logo_uri, client)
     if payload.get("taxPack"):
         html = (f'<!doctype html>\n<html><head><meta charset="utf-8">'
                 f'<title>{_h("Tax pack — " + str(payload.get("title") or ""))}</title>'
@@ -825,23 +985,31 @@ def build_report_html(payload, ctx):
                 + '<div class="foot">Estimates from the stated model inputs — not financial or tax advice.</div>'
                 + '</body></html>')
         return html
+    sel = _selected_sections(payload)
+
+    def sec(key, chunk):
+        return chunk if key in sel else ""
+
     html = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>{_h(payload.get("title") or "Property report")}</title>
 <style>{css}</style></head><body>
   {runners}
   {head}
-  {_section_cashflow(payload, accent)}
-  {_section_who_pays(payload)}
-  {_section_projections(payload)}
-  {_section_exit(payload)}
-  {_section_properties(payload, accent)}
-  {_section_deal_check(payload)}
-  {_section_checks(payload)}
-  {_section_replacement(payload)}
-  {_section_rental_evidence(ctx or {})}
-  {_section_sales_evidence(ctx or {})}
-  {_section_suburb(ctx or {})}
-  {_section_documents(ctx or {})}
+  {sec("cashflow", _section_cashflow(payload, accent))}
+  {sec("whoPays", _section_who_pays(payload))}
+  {sec("projections", _section_projections(payload))}
+  {sec("exit", _section_exit(payload))}
+  {sec("properties", _section_properties(payload, accent))}
+  {sec("propertyIntel", _section_property_intel(ctx or {}))}
+  {sec("listingCheck", _section_listing_check(payload))}
+  {sec("areaSignals", _section_area_signals(payload))}
+  {sec("dealCheck", _section_deal_check(payload))}
+  {sec("checks", _section_checks(payload))}
+  {sec("replacement", _section_replacement(payload))}
+  {sec("rentalEvidence", _section_rental_evidence(ctx or {}))}
+  {sec("salesEvidence", _section_sales_evidence(ctx or {}))}
+  {sec("suburb", _section_suburb(ctx or {}))}
+  {sec("documents", _section_documents(ctx or {}))}
   <div class="foot">Illustrative model based on stated assumptions. Excludes some costs; figures
   change with the inputs. Estimates only, not financial or tax advice.</div>
 </body></html>"""
@@ -947,6 +1115,7 @@ def render_excel(payload, ctx):
     brand = (ctx or {}).get("branding") or {}
     got = _logo_bytes(brand.get("logoUrl"))
     logo_bytes = got[0] if got else None
+    sel = _selected_sections(payload)
     y1 = payload.get("year1") or {}
     years = payload.get("years") or []
     m = payload.get("metrics") or {}
@@ -973,7 +1142,7 @@ def render_excel(payload, ctx):
         ],
         money_cols=(2,), pct_cols=(4, 5, 6),
         widths=(26, 16))
-    if years:
+    if years and "cashflow" in sel:
         row += 1
         ws.cell(row=row, column=1, value="Assumptions").font = Font(bold=True)
         row += 1
@@ -991,19 +1160,20 @@ def render_excel(payload, ctx):
             money_cols=(2,), widths=(26, 16))
 
     # --- Year by year -----------------------------------------------------
-    ws = wb.create_sheet("Year by year")
-    row = _xl_brand_block(ws, payload, ctx, logo_bytes)
-    _xl_table(
-        ws, row,
-        ["Year", "Calendar", "Effective rent", "Operating expenses",
-         "Taxable result", "Pre-tax cash flow", "Tax refund / (cost)",
-         "After-tax cash flow", "Cumulative"],
-        [(r.get("year"), r.get("calendarYear"), r.get("effectiveRent"),
-          r.get("operatingExpenses"), r.get("taxablePropertyResult"),
-          r.get("preTaxCashFlow"), r.get("taxRefundOrCost"),
-          r.get("afterTaxCashFlow"), r.get("cumulativeAfterTaxCashFlow"))
-         for r in years],
-        money_cols=tuple(range(3, 10)), widths=(7, 10, 14, 15, 14, 14, 14, 14, 14))
+    if "projections" in sel:
+        ws = wb.create_sheet("Year by year")
+        row = _xl_brand_block(ws, payload, ctx, logo_bytes)
+        _xl_table(
+            ws, row,
+            ["Year", "Calendar", "Effective rent", "Operating expenses",
+             "Taxable result", "Pre-tax cash flow", "Tax refund / (cost)",
+             "After-tax cash flow", "Cumulative"],
+            [(r.get("year"), r.get("calendarYear"), r.get("effectiveRent"),
+              r.get("operatingExpenses"), r.get("taxablePropertyResult"),
+              r.get("preTaxCashFlow"), r.get("taxRefundOrCost"),
+              r.get("afterTaxCashFlow"), r.get("cumulativeAfterTaxCashFlow"))
+             for r in years],
+            money_cols=tuple(range(3, 10)), widths=(7, 10, 14, 15, 14, 14, 14, 14, 14))
 
     # --- Tax pack ---------------------------------------------------------
     ws = wb.create_sheet("Tax pack")

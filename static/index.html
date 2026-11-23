@@ -181,6 +181,7 @@
           </div>
           <div class="section dashboard-research-panel">
             <div class="section-head-row"><div><div class="dash-eyebrow">RESEARCH LIBRARY</div><h2>Recently analysed</h2><div class="hint">Saved property opportunities.</div></div><button id="dash-add-inline" class="secondary">+ Add</button></div>
+            <div id="dash-focus" class="dash-focus" aria-label="Focus slot"></div>
             <div id="dash-activity" class="activity-list"></div>
             <div id="dash-props" class="dashboard-research-list"></div>
           </div>
@@ -362,6 +363,16 @@
                 <input type="text" autocomplete="off" id="address-input" data-field="address" placeholder="6/14 Fawlers St, West Gladstone">
                 <div id="addr-dropdown" class="addr-dropdown hidden"></div>
                 <div class="addr-matched hidden" id="address-matched"></div></div>
+              <div class="field" id="ai-research-row" style="grid-column:1/-1">
+                <label>AI research <span class="unit" id="ai-research-model"></span></label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <button id="ai-go-comps" class="btn-ghost">Sold comps</button>
+                  <button id="ai-go-rentals" class="btn-ghost">Rental evidence</button>
+                  <button id="ai-go-listing" class="btn-ghost">Listing check</button>
+                  <button id="ai-go-signals" class="btn-ghost">Area signals</button>
+                  <span id="ai-research-msg" class="source-note"></span>
+                </div>
+              </div>
               <div class="field"><label>Purchase price <span class="unit">$</span></label>
                 <input type="number" data-field="purchasePrice"></div>
               <div class="field"><label>Ownership status</label>
@@ -525,7 +536,7 @@
         <div id="prop-tabs-intel" class="prop-tabs" aria-label="Investment properties"></div>
         <div class="section">
           <h2>Property map</h2>
-          <div class="hint">Live government spatial data for the selected address. Available parcel, planning and hazard layers depend on the state. Pick the address from the dropdown in Inputs (or type the full address) first.</div>
+          <div class="hint">Live government spatial data for the selected address. Available parcel, planning and hazard layers depend on the state. Type the address in Inputs — it auto-picks as you type.</div>
           <div class="prop-map-wrap">
             <div id="property-map"></div>
             <div class="prop-map-controls">
@@ -550,6 +561,11 @@
           <div id="valuation-guide"></div>
           <div id="property-details" class="kv-grid"></div>
           <div id="property-sources" class="source-note"></div>
+          <div id="listing-check-row" style="margin-top:12px">
+            <button id="btn-listing-check">Listing check (AI)</button>
+            <span id="listing-check-hint" class="source-note"></span>
+          </div>
+          <div id="listing-check-box" class="hidden" style="margin-top:10px"></div>
         </div>
 
         <div class="section">
@@ -571,6 +587,7 @@
           <h2>Suburb snapshot</h2>
           <div class="hint">Reference data for the suburb you selected in Inputs. Sources and as-of dates shown under each stat.</div>
           <div id="area-cards" class="cards"></div>
+          <div id="area-trend"></div>
           <div id="area-links" class="source-note"></div>
         </div>
 
@@ -610,7 +627,16 @@
 
         <div class="section">
           <h2>Comparable rentals</h2>
-          <div class="hint">Manually captured rental evidence near the property — paste from a listing and compare against your rent assumption.</div>
+          <div class="hint">Rental evidence near the property — search nearby listings with AI, or paste from a listing below, and compare against your rent assumption.</div>
+          <div id="rental-search-row" style="margin-top:10px">
+            <button id="btn-find-rentals">Find rental evidence (AI)</button>
+            <span id="rental-search-hint" class="source-note"></span>
+          </div>
+          <div id="rental-search-results" class="hidden" style="margin-top:10px">
+            <div class="table-wrap"><table id="rental-search-table"></table></div>
+            <div style="margin-top:10px"><button id="btn-save-rentals" class="primary">Save selected</button>
+              <span id="rental-search-msg" class="source-note"></span></div>
+          </div>
           <div class="grid-form" id="rental-form">
             <div class="field addr-field"><label>Address</label><input type="text" autocomplete="off" id="rental-address">
               <div id="rental-addr-dropdown" class="addr-dropdown hidden"></div></div>
@@ -647,10 +673,24 @@
               <div class="field"><label>Source</label><input type="text" autocomplete="off" id="rate-source"></div>
             </div>
             <div style="margin-top:10px"><button id="btn-add-rate">Add rate</button></div>
+            <div id="rates-ai-row" style="margin-top:10px">
+              <button id="btn-rates-ai">Suggest current rates (AI)</button>
+              <span id="rates-ai-hint" class="source-note"></span>
+            </div>
+            <div id="rates-ai-box" class="hidden" style="margin-top:10px">
+              <div class="table-wrap"><table id="rates-ai-table"></table></div>
+              <div style="margin-top:10px"><button id="btn-save-rates-ai" class="primary">Save selected</button>
+                <span id="rates-ai-msg" class="source-note"></span></div>
+            </div>
           </details>
           <details class="advanced">
             <summary>Suburb data</summary>
             <div class="table-wrap"><table id="suburb-table"></table></div>
+            <div id="suburb-ai-row" style="margin-top:10px">
+              <select id="suburb-ai-select" style="margin-right:8px"></select>
+              <button id="btn-suburb-ai">AI research this suburb</button>
+              <span id="suburb-ai-hint" class="source-note" style="margin-left:8px"></span>
+            </div>
             <div class="grid-form" style="margin-top:10px">
               <div class="field"><label>Suburb</label><input type="text" autocomplete="off" id="sub-name"></div>
               <div class="field"><label>Postcode</label><input type="text" autocomplete="off" id="sub-postcode"></div>
@@ -667,6 +707,12 @@
       <!-- ==================== DEAL CHECK ==================== -->
       <section id="section-dealcheck" class="section-page">
         <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">DEAL CHECK</div><h1 class="page-title">Deal check</h1><div class="page-description">Three lenses, one verdict: the area scored against every SA2 in Australia (2021 Census), your deal numbers scored against the linked suburb, and local evidence — comparables, days on market and the ABS price series.</div></div></div>
+        <div class="section" style="margin-bottom:0">
+          <button id="btn-dc-suburb-ai">AI suburb evidence</button>
+          <button id="btn-dc-signals" style="margin-left:8px">Area signals (AI)</button>
+          <span id="dc-ai-hint" class="source-note" style="margin-left:8px"></span>
+          <div id="dc-signals-box" class="hidden" style="margin-top:10px"></div>
+        </div>
         <div class="section" id="dc-body"></div>
       </section>
 
@@ -839,6 +885,10 @@
             <div class="field"><label>Business name</label><input type="text" autocomplete="off" id="ws-brand-name" maxlength="80" placeholder="Smith Property Buyers"></div>
             <div class="field"><label>Accent colour</label><input type="color" id="ws-brand-color" value="#6366f1"></div>
             <div class="field"><label>Tagline <span class="unit">optional</span></label><input type="text" autocomplete="off" id="ws-brand-tagline" maxlength="140" placeholder="Independent advice, data first"></div>
+            <div class="field"><label>Phone <span class="unit">reports</span></label><input type="text" autocomplete="off" id="ws-brand-phone" maxlength="30" placeholder="0400 000 000"></div>
+            <div class="field"><label>Email <span class="unit">reports</span></label><input type="email" autocomplete="off" id="ws-brand-email" maxlength="80" placeholder="you@youragency.com.au"></div>
+            <div class="field"><label>Website <span class="unit">reports</span></label><input type="text" autocomplete="off" id="ws-brand-website" maxlength="120" placeholder="youragency.com.au"></div>
+            <div class="field"><label>Office address <span class="unit">reports</span></label><input type="text" autocomplete="off" id="ws-brand-office" maxlength="140" placeholder="Suite 4, 100 Main St, Brisbane QLD"></div>
             <div class="field"><label>Logo <span class="unit">PNG/JPG ≤ 1 MB</span></label>
               <input type="file" id="ws-brand-logo" accept="image/png,image/jpeg"></div>
             <div class="field"><label>&nbsp;</label><button id="ws-save-branding" class="primary">Save branding</button></div>
@@ -931,17 +981,23 @@
       <!-- ==================== PORTFOLIO ==================== -->
       <section id="section-portfolio" class="section-page">
         <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">MY PORTFOLIO</div><h1 class="page-title">Where you stand</h1><div class="page-description">Everything you own, owe and could borrow against — aggregated across your purchased properties, with the next 15 years projected.</div></div></div>
+        <div class="pfo-whatif-row">
+          <label class="pfo-whatif" title="Include considering and under-offer properties in the totals above as if they completed">
+            <input type="checkbox" id="pfo-whatif"><span class="pfo-whatif-switch" aria-hidden="true"></span>
+            <span>What-if: include prospective properties in the totals</span>
+          </label>
+        </div>
         <div class="section">
           <div class="cards" id="pfo-stats"></div>
         </div>
         <div class="section">
           <h2>Net worth — now and the next 15 years</h2>
-          <div class="hint">Today's position, then every purchased property projected together.</div>
+          <div class="hint" id="pfo-chart-hint">Today's position, then every purchased property projected together.</div>
           <div class="chart-box"><canvas id="pfo-chart"></canvas></div>
         </div>
         <div class="section">
           <h2>Own &amp; owe</h2>
-          <div class="hint">Year-one figures for each purchased property, from its saved scenario.</div>
+          <div class="hint" id="pfo-table-hint">Year-one figures for each purchased property, from its saved scenario.</div>
           <div class="table-wrap"><table id="pfo-table"></table></div>
         </div>
         <div class="section">
@@ -984,6 +1040,13 @@
         <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">HEAT MAPS</div><h1 class="page-title">Every community, at a glance</h1><div class="page-description">2021 Census by SA2, Australia-wide — tenure, stress, work, age and demand signals. Pick a metric, pan anywhere.</div></div></div>
         <div class="section">
           <div id="hm-groups"></div>
+          <div id="hm-address-row" style="margin-top:10px">
+            <div class="field addr-field" style="max-width:420px"><label>Find an address <span class="unit">pans the map</span></label>
+              <input type="text" autocomplete="off" id="hm-address-input" placeholder="Type an address, suburb or postcode">
+              <div id="hm-addr-dropdown" class="addr-dropdown hidden"></div>
+              <div class="addr-matched hidden" id="hm-address-matched"></div>
+            </div>
+          </div>
           <div style="margin-top:10px"><label class="lq-layer" style="display:inline-flex;align-items:center;gap:6px"><input type="checkbox" id="hm-labels"> <span>Show values on the map</span></label></div>
         </div>
         <div class="section">
@@ -997,6 +1060,10 @@
       <section id="section-markets" class="section-page">
         <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">MARKETS</div><h1 class="page-title">Australia by state</h1><div class="page-description">Macro indicators from ABS releases. State rankings update per metric.</div></div></div>
         <div class="section">
+          <div style="margin-bottom:10px">
+            <button id="btn-mk-ai">Refresh with AI</button>
+            <span id="mk-ai-hint" class="source-note"></span>
+          </div>
           <div class="cards" id="mk-cards"></div>
         </div>
         <div class="section">
@@ -1081,6 +1148,24 @@
       <div class="command-search"><span>⌕</span><input id="command-search-input" type="search" autocomplete="off" placeholder="Search pages, properties and scenarios…"><kbd>ESC</kbd></div>
       <div class="command-results" id="command-results"></div>
       <div class="command-footer"><span>↑ ↓ to navigate</span><span><kbd>↵</kbd> to open</span><span><kbd>⌘ K</kbd> quick search</span></div>
+    </div>
+  </div>
+
+  <div id="report-dialog" class="report-dialog hidden" role="dialog" aria-modal="true" aria-label="Choose report sections">
+    <div class="report-dialog-panel">
+      <div class="report-dialog-head">
+        <div><div class="dash-eyebrow">CLIENT REPORT</div><h2>Choose report sections</h2></div>
+        <button id="report-dialog-x" class="icon-btn" title="Close">&times;</button>
+      </div>
+      <div class="hint">Tick the sections to include in the PDF. Sections with no data are skipped automatically.</div>
+      <div id="report-dialog-groups"></div>
+      <div class="report-dialog-actions">
+        <button id="report-dialog-select-all" class="secondary">Select all</button>
+        <span class="spacer"></span>
+        <button id="report-dialog-cancel" class="secondary">Cancel</button>
+        <button id="report-dialog-excel" class="secondary">Download Excel</button>
+        <button id="report-dialog-download" class="primary">Download PDF</button>
+      </div>
     </div>
   </div>
 

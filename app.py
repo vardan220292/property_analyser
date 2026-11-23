@@ -31,6 +31,8 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 
 import auth
+import ai_research
+import admin
 import areadata
 import attachments
 import census
@@ -44,6 +46,7 @@ import presentations
 import actuals
 import branding
 import qld_intel
+import state_intel
 import sales
 import vic_intel
 import ratelimit
@@ -145,6 +148,13 @@ app.register_blueprint(census.bp)
 app.register_blueprint(markets.bp)
 app.register_blueprint(sales.bp)
 app.register_blueprint(comps_search.bp)
+app.register_blueprint(comps_search.bp_rentals)
+app.register_blueprint(ai_research.bp_markets)
+app.register_blueprint(ai_research.bp_rates)
+app.register_blueprint(ai_research.bp_suburbs)
+app.register_blueprint(ai_research.bp_property)
+app.register_blueprint(ai_research.bp_meta)
+app.register_blueprint(admin.bp)
 app.register_blueprint(domain_api.bp)
 app.register_blueprint(portal.bp)
 app.register_blueprint(portfolios.bp)
@@ -152,6 +162,7 @@ app.register_blueprint(presentations.bp)
 app.register_blueprint(presentations.clients_bp)
 app.register_blueprint(qld_intel.bp)
 app.register_blueprint(vic_intel.bp)
+app.register_blueprint(state_intel.bp)
 app.register_blueprint(scenarios.bp)
 
 
@@ -186,6 +197,8 @@ def create_db():
 
 if __name__ == "__main__":
     create_db()
+    import daily_refresh
+    daily_refresh.start_scheduler()
     # Personal tool: loopback by default. HOST=0.0.0.0 shares on the LAN —
     # put it behind HTTPS (reverse proxy) before exposing it further.
     app.run(host=HOST, port=PORT, threaded=True)

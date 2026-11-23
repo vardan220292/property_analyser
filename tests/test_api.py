@@ -232,7 +232,7 @@ check("401 without token: /api/comps/search",
       c.post("/api/comps/search", json={"address": "x"}).status_code == 401)
 
 saved_env = {k: os.environ.pop(k, None) for k in
-             ("PA_DOMAIN_CLIENT_ID", "PA_DOMAIN_CLIENT_SECRET", "PA_ANTHROPIC_API_KEY")}
+             ("PA_DOMAIN_CLIENT_ID", "PA_DOMAIN_CLIENT_SECRET", "PA_ULTIMATEAI_API_KEY")}
 try:
     r = c.get("/api/address/suggest?q=1/", headers=H1)
     check("suggest too-short q -> 400", r.status_code == 400)
@@ -489,7 +489,7 @@ try:
     check("comps search unconfigured -> 503", r.status_code == 503 and not r.get_json()["ok"])
     check("comps search unconfigured message", "not configured" in r.get_json()["error"])
 
-    os.environ["PA_ANTHROPIC_API_KEY"] = "test-key"
+    os.environ["PA_ULTIMATEAI_API_KEY"] = "test-key"
 
     r = c.post("/api/comps/search", headers=H1, json={"address": "   "})
     check("comps search blank address -> 400", r.status_code == 400)
@@ -529,13 +529,386 @@ try:
         {"address": "B St"},
         {"address": "C St", "soldPrice": "not-a-number"},
         {"address": "D St", "soldPrice": 700000, "url": "https://ok.example/x",
-         "confidence": "WEIRD"},
+         "distanceKm": 2.3, "confidence": "WEIRD"},
     ])
     check("sanitize drops address-less and priceless rows", len(clean) == 2)
+    check("sanitize keeps distance", clean[1]["distanceKm"] == 2.3)
     check("sanitize blanks non-http urls",
           all(r2["url"] == "" or r2["url"].startswith("https://") for r2 in clean))
     check("sanitize defaults weird confidence to low",
           [r2["confidence"] for r2 in clean] == ["low", "low"])
+
+    # --- AI rental-evidence search (mirrors the sold-comps flow) ---------
+    r = c.post("/api/rentals/search", json={"address": "x"})
+    check("401 without token: /api/rentals/search",
+          r.status_code == 401)
+    os.environ.pop("PA_ULTIMATEAI_API_KEY", None)
+    r = c.post("/api/rentals/search", headers=H1, json={"address": "1 Test St"})
+    check("rental search unconfigured -> 503",
+          r.status_code == 503 and not r.get_json()["ok"])
+    check("rental search unconfigured message",
+          "not configured" in r.get_json()["error"])
+    os.environ["PA_ULTIMATEAI_API_KEY"] = "test-key"
+
+    r = c.post("/api/rentals/search", headers=H1, json={"address": "   "})
+    check("rental search blank address -> 400", r.status_code == 400)
+
+    captured_rental = {}
+
+    def _fake_rental_search(address, beds=None):
+        captured_rental["address"], captured_rental["beds"] = address, beds
+        return [{
+            "address": "12 Caledonian Drive, Beaconsfield QLD 4740",
+            "rentWeekly": 620, "bedrooms": 4, "propertyType": "house",
+            "url": "https://www.domain.com.au/rent/xyz",
+            "confidence": "high", "source": "domain.com.au",
+        }]
+
+    real_rental_search = comps_search.search_rentals
+    comps_search.search_rentals = _fake_rental_search
+    r = c.post("/api/rentals/search", headers=H1,
+               json={"address": "1/50 Oldmill Dr", "beds": 4})
+    body = r.get_json()
+    check("rental search stubbed -> 200", r.status_code == 200 and body["ok"])
+    check("rental search forwards address+beds",
+          captured_rental["address"] == "1/50 Oldmill Dr" and captured_rental["beds"] == 4)
+    check("rental search returns rows", body["data"]["rentals"][0]["rentWeekly"] == 620)
+
+    def _error_rental_search(address, beds=None):
+        raise comps_search.CompsSearchError("search produced no structured results")
+    comps_search.search_rentals = _error_rental_search
+    r = c.post("/api/rentals/search", headers=H1, json={"address": "1/50 Oldmill Dr"})
+    check("rental search failure -> 502", r.status_code == 502 and not r.get_json()["ok"])
+    comps_search.search_rentals = real_rental_search
+
+    clean_rentals = comps_search._sanitize_rentals([
+        {"address": "A St", "rentWeekly": 500, "url": "javascript:alert(1)"},
+        {"address": "", "rentWeekly": 400},
+        {"address": "B St", "rentWeekly": 0},
+        {"address": "C St", "rentWeekly": "not-a-number"},
+        {"address": "D St", "rentWeekly": 620, "bedrooms": -3,
+         "propertyType": "boat", "listedDate": "2026-11", "distanceKm": 1.4,
+         "url": "https://ok.example/x", "confidence": "WEIRD"},
+    ])
+    check("rental sanitize drops address-less and rent-less rows",
+          len(clean_rentals) == 2)
+    check("rental sanitize normalizes fields",
+          clean_rentals[1]["bedrooms"] is None
+          and clean_rentals[1]["propertyType"] is None
+          and clean_rentals[1]["confidence"] == "low")
+    check("rental sanitize keeps date+distance",
+          clean_rentals[1]["listedDate"] == "2026-11"
+          and clean_rentals[1]["distanceKm"] == 1.4)
+
+    # --- AI web-evidence endpoints ---------------------------------------
+    # (markets refresh / bank rates suggest / suburb evidence / listing
+    # check / area signals) — run_research stubbed, never the real gateway.
+    import ai_research  # noqa: E402
+    import gateway_search  # noqa: E402
+    import markets as markets_mod  # noqa: E402
+
+    def _stub_research(payload):
+        def fake(instructions, task, record_tool, list_key, sanitize):
+            return sanitize(payload)
+        return fake
+
+    for route in ("/api/markets/ai-refresh", "/api/bank-rates/suggest",
+                  "/api/suburbs/ai-evidence", "/api/property/listing-check",
+                  "/api/property/area-signals"):
+        r = c.post(route, json={})
+        check(f"401 without token: {route}", r.status_code == 401)
+
+    os.environ.pop("PA_ULTIMATEAI_API_KEY", None)
+    for route in ("/api/markets/ai-refresh", "/api/bank-rates/suggest",
+                  "/api/property/listing-check", "/api/property/area-signals"):
+        r = c.post(route, headers=H1, json={})
+        check(f"503 unconfigured: {route}", r.status_code == 503
+              and "not configured" in r.get_json()["error"])
+    os.environ["PA_ULTIMATEAI_API_KEY"] = "test-key"
+
+    r = c.post("/api/suburbs/ai-evidence", headers=H1, json={})
+    check("suburb evidence missing suburbId -> 400", r.status_code == 400)
+    r = c.post("/api/property/listing-check", headers=H1, json={"address": "   "})
+    check("listing check blank address -> 400", r.status_code == 400)
+    r = c.post("/api/property/area-signals", headers=H1, json={})
+    check("area signals blank address -> 400", r.status_code == 400)
+
+    real_run = ai_research.run_research
+    real_sdmx = (markets_mod._sdmx_cache["data"], markets_mod._sdmx_cache["at"])
+    real_ai = (markets_mod._ai_national["data"], markets_mod._ai_national["at"])
+    import time as _time
+    markets_mod._sdmx_cache["data"], markets_mod._sdmx_cache["at"] = {}, _time.time()
+
+    # markets research now runs the parallel-shard path (streaming runner)
+    def _stub_stream_markets(instructions, task, record_tool, list_key, sanitize,
+                             on_event=None):
+        if "householdIncome" in instructions:
+            return sanitize([
+                {"key": "householdIncome", "value": 1746, "label": "2021 Census",
+                 "source": "https://abs.gov.au/census"},
+                {"key": "junk", "value": 1, "label": "x", "source": "y"}])
+        return sanitize([
+            {"key": "unemployment", "value": 4.1, "label": "Oct 2026",
+             "source": "https://abs.gov.au/lfs"},
+            {"key": "bogus", "value": 1, "label": "x", "source": "y"}])
+
+    real_stream_markets = gateway_search.run_research_streaming
+    gateway_search.run_research_streaming = _stub_stream_markets
+    ai_research.run_research_streaming = _stub_stream_markets
+    gateway_search.clear_cache()
+    r = c.post("/api/markets/ai-refresh", headers=H1, json={})
+    body = r.get_json()
+    check("markets ai-refresh stubbed -> 200", r.status_code == 200 and body["ok"])
+    check("markets ai-refresh sanitizes keys + merges shards",
+          sorted(body["data"]["indicators"]) == ["householdIncome", "unemployment"])
+    r = c.get("/api/markets", headers=H1)
+    nat = r.get_json()["data"]["national"]["unemployment"]
+    check("markets GET reflects AI value",
+          nat["value"] == 4.1 and nat.get("liveVia") == "AI web search")
+    markets_mod._sdmx_cache["data"], markets_mod._sdmx_cache["at"] = real_sdmx
+    markets_mod._ai_national["data"], markets_mod._ai_national["at"] = real_ai
+    gateway_search.run_research_streaming = real_stream_markets
+    ai_research.run_research_streaming = real_stream_markets
+    gateway_search.clear_cache()
+
+    def _stub_stream(payload):
+        def fake(instructions, task, record_tool, list_key, sanitize, on_event=None):
+            return sanitize(payload)
+        return fake
+
+    real_stream_stub = gateway_search.run_research_streaming
+    ai_research.run_research_streaming = real_stream_stub
+    # rates research runs as parallel shards -> stubs the streaming runner
+    gateway_search.run_research_streaming = _stub_stream([
+        {"bankName": "Test Bank", "productName": "Investor Var",
+         "investorIoRate": 5.89, "investorPiRate": 0.055,
+         "source": "https://testbank.example/x"},
+        {"bankName": "Rate Only Bank", "productName": "Standard Var",
+         "investorPiRate": 6.2, "source": "https://comparison.example/x"},
+        {"bankName": "", "investorIoRate": 5, "investorPiRate": 5, "source": "x"},
+    ])
+    ai_research.run_research_streaming = gateway_search.run_research_streaming
+    gateway_search.clear_cache()
+    r = c.post("/api/bank-rates/suggest", headers=H1, json={})
+    body = r.get_json()
+    check("rates suggest stubbed -> 200", r.status_code == 200 and body["ok"])
+    sugg = body["data"]["rates"]
+    check("rates suggest percent->decimal + partial rows", len(sugg) == 2
+          and abs(sugg[0]["investorIoRate"] - 0.0589) < 1e-6
+          and abs(sugg[0]["investorPiRate"] - 0.055) < 1e-6
+          and sugg[1]["investorIoRate"] is None
+          and abs(sugg[1]["investorPiRate"] - 0.062) < 1e-6)
+    r = c.post("/api/bank-rates", headers=H1, json={
+        "bankName": sugg[0]["bankName"], "productName": sugg[0]["productName"],
+        "investorIoRate": sugg[0]["investorIoRate"],
+        "investorPiRate": sugg[0]["investorPiRate"],
+        "source": sugg[0]["source"], "checkedAt": "2026-11"})
+    check("AI rate saves via rates endpoint", r.status_code in (200, 201),
+          r.get_json())
+    gateway_search.clear_cache()
+
+    r = c.post("/api/suburbs", headers=H1, json={
+        "name": "Aitest", "postcode": "4800", "medianPrice": 500000})
+    check("create suburb for ai evidence", r.status_code == 201, r.get_json())
+    ASID = r.get_json()["data"]["id"]
+    def _stub_stream_suburb(instructions, task, record_tool, list_key, sanitize,
+                            on_event=None):
+        return sanitize([
+            {"metric": "medianPrice", "value": 725000, "asOf": "Nov 2026",
+             "source": "https://example/mp"},
+            {"metric": "vacancyPct", "value": 1.4, "asOf": "Oct 2026",
+             "source": "https://example/vac"},
+            {"metric": "nope", "value": 2, "asOf": "x", "source": "y"}])
+
+    real_stream_suburb = gateway_search.run_research_streaming
+    gateway_search.run_research_streaming = _stub_stream_suburb
+    ai_research.run_research_streaming = _stub_stream_suburb
+    gateway_search.clear_cache()
+    r = c.post("/api/suburbs/ai-evidence", headers=H1, json={"suburbId": ASID})
+    body = r.get_json()
+    check("suburb evidence stubbed -> 200", r.status_code == 200 and body["ok"])
+    check("suburb evidence persisted",
+          body["data"]["suburb"]["medianPrice"] == 725000
+          and body["data"]["suburb"]["vacancyPct"] == 1.4)
+    src = body["data"]["suburb"]["sources"]["medianPrice"]
+    check("suburb evidence stamps source",
+          "AI web search" in src["source"] and src["asOf"] == "Nov 2026")
+    gateway_search.run_research_streaming = real_stream_suburb
+    ai_research.run_research_streaming = real_stream_suburb
+    gateway_search.clear_cache()
+
+    ai_research.run_research = _stub_research({
+        "onMarket": True, "askingPrice": 700000, "listedDate": "2026-10",
+        "agent": "Test Realty", "lastSoldPrice": 610000, "lastSoldDate": "2021-05",
+        "url": "https://realestate.com.au/x", "confidence": "high"})
+    gateway_search.clear_cache()
+    r = c.post("/api/property/listing-check", headers=H1,
+               json={"address": "1 Test St"})
+    body = r.get_json()
+    check("listing check stubbed -> 200", r.status_code == 200 and body["ok"])
+    l = body["data"]["listing"]
+    check("listing check sanitized", l["onMarket"] is True
+          and l["askingPrice"] == 700000 and l["confidence"] == "high")
+    ai_research.run_research = real_run
+
+    ai_research.run_research = _stub_research([
+        {"name": "Test Rail Extension", "type": "transport",
+         "status": "under_construction", "timeframe": "2029", "distanceKm": 1.8,
+         "url": "https://example/rail"},
+        {"name": "No URL", "type": "other", "status": "proposed", "url": ""},
+    ])
+    gateway_search.clear_cache()
+    r = c.post("/api/property/area-signals", headers=H1,
+               json={"address": "1 Test St"})
+    body = r.get_json()
+    check("area signals stubbed -> 200", r.status_code == 200 and body["ok"])
+    check("area signals sanitize+cap", len(body["data"]["signals"]) == 1
+          and body["data"]["signals"][0]["status"] == "under_construction")
+    ai_research.run_research = real_run
+    gateway_search.clear_cache()
+
+    # --- AI search streaming routes (parallel source shards) -------------
+    r = c.post("/api/comps/search/stream", json={"address": "x"})
+    check("401 without token: /api/comps/search/stream", r.status_code == 401)
+    os.environ.pop("PA_ULTIMATEAI_API_KEY", None)
+    r = c.post("/api/comps/search/stream", headers=H1, json={"address": "1 Test St"})
+    check("503 unconfigured: /api/comps/search/stream", r.status_code == 503)
+    r = c.post("/api/rentals/search/stream", headers=H1, json={"address": "1 Test St"})
+    check("503 unconfigured: /api/rentals/search/stream", r.status_code == 503)
+    os.environ["PA_ULTIMATEAI_API_KEY"] = "test-key"
+
+    real_stream_fn = gateway_search.run_research_streaming
+    calls_stream = {"n": 0}
+
+    def _fake_stream(instructions, task, record_tool, list_key, sanitize,
+                     on_event=None):
+        calls_stream["n"] += 1
+        if on_event:
+            on_event({"kind": "search", "query": "probe"})
+        return sanitize([{"address": "9 Shard St", "soldPrice": 700000,
+                          "soldDate": "2026-09", "url": "https://ok.example/s",
+                          "confidence": "high"}])
+
+    gateway_search.run_research_streaming = _fake_stream
+    ai_research.run_research_streaming = _fake_stream
+    gateway_search.clear_cache()
+    r = c.post("/api/comps/search/stream", headers=H1,
+               json={"address": "9 Shard Street", "beds": 4})
+    frames = r.get_data(as_text=True)
+    check("comps stream -> SSE progress + done frames", r.status_code == 200
+          and '"kind": "search"' in frames and '"type": "done"' in frames
+          and "9 Shard St" in frames)
+
+    n_first = calls_stream["n"]
+    r = c.post("/api/comps/search/stream", headers=H1,
+               json={"address": "9 Shard Street", "beds": 4})
+    check("comps stream cached on repeat", calls_stream["n"] == n_first
+          and '"type": "done"' in r.get_data(as_text=True))
+
+    def _fake_stream2(instructions, task, record_tool, list_key, sanitize,
+                      on_event=None):
+        if "iA shard A" in instructions:
+            return [{"address": "dup St", "soldPrice": 1},
+                    {"address": "onlyA St", "soldPrice": 2}]
+        raise gateway_search.SearchError("shard B down")
+
+    gateway_search.run_research_streaming = _fake_stream2
+    ai_research.run_research_streaming = _fake_stream2
+    shards = [
+        {"name": "shard A", "instructions": "iA shard A", "task": "t",
+         "record_tool": {"name": "rt"}, "list_key": "comps",
+         "sanitize": lambda x: x},
+        {"name": "shard B", "instructions": "iB shard B", "task": "t",
+         "record_tool": {"name": "rt"}, "list_key": "comps",
+         "sanitize": lambda x: x},
+    ]
+    rows = gateway_search.collect_parallel_research(
+        shards, lambda r: r["address"].lower())
+    check("parallel merge dedupes + tolerates shard failure",
+          [x["address"] for x in rows] == ["dup St", "onlyA St"])
+    gateway_search.run_research_streaming = real_stream_fn
+    ai_research.run_research_streaming = real_stream_fn
+    gateway_search.clear_cache()
+
+    # --- remaining AI stream routes (markets / listing / signals / suburb)
+    r = c.post("/api/markets/ai-refresh/stream", json={})
+    check("401 without token: /api/markets/ai-refresh/stream", r.status_code == 401)
+    r = c.get("/api/ai/status")
+    check("ai status without token -> 401", r.status_code == 401)
+    os.environ.pop("PA_ULTIMATEAI_API_KEY", None)
+    r = c.post("/api/property/listing-check/stream", headers=H1, json={"address": "x"})
+    check("503 unconfigured: listing stream", r.status_code == 503)
+    r = c.post("/api/property/area-signals/stream", headers=H1, json={"address": "x"})
+    check("503 unconfigured: signals stream", r.status_code == 503)
+    r = c.post("/api/markets/ai-refresh/stream", headers=H1, json={})
+    check("503 unconfigured: markets stream", r.status_code == 503)
+    os.environ["PA_ULTIMATEAI_API_KEY"] = "test-key"
+
+    gateway_search.run_research_streaming = _stub_stream({
+        "onMarket": False, "lastSoldPrice": 640000, "confidence": "medium",
+        "url": "https://realestate.com.au/yy"})
+    ai_research.run_research_streaming = gateway_search.run_research_streaming
+    gateway_search.clear_cache()
+    r = c.post("/api/property/listing-check/stream", headers=H1,
+               json={"address": "5 Stream St"})
+    frames = r.get_data(as_text=True)
+    check("listing stream -> done frame", r.status_code == 200
+          and '"type": "done"' in frames and '"listing"' in frames)
+
+    r = c.post("/api/property/area-signals/stream", headers=H1,
+               json={"address": "5 Stream St"})
+    frames = r.get_data(as_text=True)
+    check("signals stream -> done frame", r.status_code == 200
+          and '"type": "done"' in frames)
+
+    gateway_search.run_research_streaming = _stub_stream([
+        {"key": "unemployment", "value": 4.2, "label": "Oct 2026",
+         "source": "https://abs.gov.au/lfs"}])
+    ai_research.run_research_streaming = gateway_search.run_research_streaming
+    gateway_search.clear_cache()
+    r = c.post("/api/markets/ai-refresh/stream", headers=H1, json={})
+    frames = r.get_data(as_text=True)
+    check("markets stream -> done + adoption", r.status_code == 200
+          and '"type": "done"' in frames and "unemployment" in frames
+          and markets_mod._ai_national["data"] is not None)
+    markets_mod._ai_national["data"], markets_mod._ai_national["at"] = None, 0.0
+    gateway_search.run_research_streaming = real_stream_fn
+    ai_research.run_research_streaming = real_stream_fn
+
+    r = c.get("/api/ai/status", headers=H1)
+    check("ai status configured", r.status_code == 200
+          and r.get_json()["data"]["configured"] is True)
+
+    # suburb evidence stream persists via the shared helper
+    r = c.post("/api/suburbs", headers=H1, json={
+        "name": "Streamtown", "postcode": "4801"})
+    STID = r.get_json()["data"]["id"]
+    gateway_search.run_research_streaming = _stub_stream([
+        {"metric": "medianPrice", "value": 700000, "asOf": "Nov 2026",
+         "source": "https://example/st"}])
+    ai_research.run_research_streaming = gateway_search.run_research_streaming
+    gateway_search.clear_cache()
+    r = c.post("/api/suburbs/ai-evidence/stream", headers=H1,
+               json={"suburbId": STID})
+    frames = r.get_data(as_text=True)
+    check("suburb evidence stream -> done + persisted", r.status_code == 200
+          and '"type": "done"' in frames and "700000" in frames)
+    r = c.get("/api/suburbs", headers=H1)
+    strow = next(s for s in r.get_json()["data"] if s["id"] == STID)
+    check("suburb evidence stream persisted to suburb row",
+          strow["medianPrice"] == 700000
+          and "AI web search" in strow["sources"]["medianPrice"]["source"])
+
+    # valuation guide all-states fallback (suburb record median)
+    r = c.get(f"/api/valuation?suburb=streamtown&state=QLD&postcode=4801")
+    vbody = r.get_json()["data"]
+    check("valuation falls back to suburb record median",
+          vbody["available"] is True and vbody["latest"]["median"] == 700000
+          and vbody["guide"]["low"] == round(700000 * 0.9))
+    r = c.get("/api/valuation?suburb=nowhere%20xy&state=QLD")
+    check("valuation still honest when nothing on record",
+          r.get_json()["data"]["available"] is False)
+    gateway_search.clear_cache()
 
     # the UI save-selected flow: candidate -> existing comps endpoint
     cand = {"address": "45 Oldmill Drive", "soldPrice": 662000, "soldDate": "2026-09",
@@ -794,10 +1167,26 @@ check("investor blocked from branding",
       c.get("/api/branding", headers=H1).status_code == 403)
 r = c.put("/api/branding", headers=BA, json={
     "businessName": "Smith Property Buyers", "accentColor": "#0ea5e9",
-    "tagline": "Independent advice, data first"})
+    "tagline": "Independent advice, data first",
+    "phone": "0400 000 000", "email": "smith@example.com",
+    "website": "smithproperty.com.au", "officeAddress": "Suite 4, 100 Main St, Brisbane QLD"})
 check("BA saves branding", r.status_code == 200 and r.get_json()["data"]["businessName"] == "Smith Property Buyers")
+check("BA branding carries contact details",
+      r.get_json()["data"]["phone"] == "0400 000 000"
+      and r.get_json()["data"]["email"] == "smith@example.com"
+      and r.get_json()["data"]["website"] == "smithproperty.com.au"
+      and r.get_json()["data"]["officeAddress"].startswith("Suite 4"))
 r = c.put("/api/branding", headers=BA, json={"accentColor": "red"})
 check("bad accent colour rejected", r.status_code == 400)
+import report as report_mod  # noqa: E402
+_branded = report_mod.build_report_html(
+    {"title": "t", "years": [], "accent": "#0ea5e9"},
+    {"branding": {"businessName": "Smith Property Buyers", "phone": "0400 000 000",
+                  "email": "smith@example.com", "website": "smithproperty.com.au"}})
+check("report PDF header band + footer carry BA contact details",
+      "Smith Property Buyers" in _branded and "0400 000 000" in _branded
+      and "smith@example.com" in _branded and "smithproperty.com.au" in _branded
+      and 'class="head"' in _branded)
 
 # Trial plan cap: BA has 0 active presentations (PD was revoked); fill to 3 then fail on the 4th
 for email in ("cap1@client.com", "cap2@client.com", "cap3@client.com"):
@@ -1171,6 +1560,9 @@ r = c.post(f"/api/portal/presentation/{RPPID['id']}/report", headers=RPCL,
            json=REPORT_PAYLOAD)
 check("client report renders a PDF",
       r.status_code == 200 and b"%PDF" in r.data[:5])
+check("client report honours the sections body param",
+      c.post(f"/api/portal/presentation/{RPPID['id']}/report", headers=RPCL,
+             json=dict(REPORT_PAYLOAD, sections=["exit"])).status_code == 200)
 check("foreign client report 404",
       c.post(f"/api/portal/presentation/{RPPID['id']}/report", headers=OTHER_CL,
              json=REPORT_PAYLOAD).status_code == 404)
@@ -1360,6 +1752,240 @@ try:
 finally:
     qld_intel._query = real_query
     qld_intel.clear_cache()
+
+# ---------------------------------------------------------------------------
+# state_intel — parcel intelligence for NSW/ACT/TAS/WA/SA/NT
+# (external ArcGIS calls stubbed at _esri_point_query, same pattern as QLD)
+# ---------------------------------------------------------------------------
+
+import state_intel  # noqa: E402
+import olf  # noqa: E402
+
+# OLF is the primary national provider — stub it for the whole block.
+OLF_PARCEL = {
+    "parcel": {"id": "Lot 2 DP111", "areaSqm": 610.0, "locality": "SYDNEY",
+               "extra": {"lotNumber": "2", "planNumber": "DP111"}},
+    "geometry": {"rings": [[[151.2, -33.87], [151.21, -33.87]]]},
+    "licence": "CC-BY-4.0", "attribution": "© State of NSW",
+    "source_updated_at": "2026-10-01"}
+OLF_ZONING = {"category": "R3", "name": "Medium Density Residential",
+              "licence": "CC-BY-4.0"}
+_real_olf_parcel = olf.parcel
+_real_olf_zoning = olf.zoning
+
+
+OLF_ACT = {"parcel": {"id": "Block 5 Section 2, CITY", "areaSqm": 800.0,
+                      "locality": "CITY", "extra": {}},
+           "geometry": None, "licence": "CC-BY-4.0", "attribution": "ACT"}
+OLF_TAS = {"parcel": {"id": "PID 99", "areaSqm": 300.0, "locality": None,
+                      "extra": {"tenure": "Council"}},
+           "geometry": None, "licence": "CC-BY-4.0", "attribution": "TAS"}
+OLF_SA = {"parcel": {"id": "Lot F1505 41778", "areaSqm": 13.51,
+                     "locality": "ADELAIDE", "extra": {}},
+          "geometry": {"rings": [[[138.6, -34.93]]]}, "licence": "LicenseRef",
+          "attribution": "© SA"}
+OLF_NT = {"parcel": {"id": "5606", "areaSqm": 1502.0, "locality": None,
+                     "extra": {}},
+          "geometry": {"rings": [[[130.85, -12.46]]]}, "licence": "LicenseRef",
+          "attribution": "© NT"}
+
+
+OLF_WA = {"parcel": {"id": None, "areaSqm": 402.1, "locality": None,
+                     "extra": {"note": "LGATE-001 geometry only"}},
+          "geometry": {"rings": [[[115.8, -32]]]}, "licence": "Landgate",
+          "attribution": "© WA"}
+OLF_FALLBACK = {"parcel": None, "geometry": None}
+
+
+def _olf_stub(lat, lon, state):
+    return {"NSW": (OLF_PARCEL, None), "ACT": (OLF_ACT, None),
+            "TAS": (OLF_TAS, None), "SA": (OLF_SA, None),
+            "NT": (OLF_NT, None), "WA": (OLF_WA, None)}.get(
+        state, (OLF_FALLBACK, None))
+
+
+def _olf_zoning_stub(lat, lon, state):
+    return (dict(OLF_ZONING), None)
+
+
+olf.parcel = _olf_stub
+olf.zoning = _olf_zoning_stub
+
+r = c.get("/api/intel/state-property?lat=-33.8688&lon=151.2093&state=NSW")
+check("401 without token: /api/intel/state-property", r.status_code == 401)
+r = c.get("/api/intel/state-property?lat=x&lon=y&state=NSW", headers=H1)
+check("state intel bad lat/lon -> 400", r.status_code == 400)
+r = c.get("/api/intel/state-property?lat=-33.87&lon=151.21&state=ZZ", headers=H1)
+check("state intel unsupported state -> 400", r.status_code == 400)
+
+real_point_query = state_intel._esri_point_query
+calls = {"n": 0}
+
+def _fake_point_query(url, lat, lon, out_fields):
+    calls["n"] += 1
+    if "ACTGOV_BLOCKS" in url:
+        return ({"BLOCK_NUMBER": 12, "SECTION_NUMBER": 19, "BLOCK_SECTION": "19/12",
+                 "DIVISION_NAME": "CITY", "BLOCK_KEY": 11080190012,
+                 "PLAN_NUMBERS": "AP4267", "BLOCK_DERIVED_AREA": "20781",
+                 "LAND_USE_POLICY_ZONES": "DES: DESIGNATED",
+                 "DISTRICT_NAME": "CANBERRA CENTRAL"}, {"rings": [[[149, -35], [150, -35]]]})
+    if "thelist.tas.gov.au" in url:
+        return ({"PID": 3321248, "VOLUME": "40374", "FOLIO": 3, "MEAS_AREA": 27.8,
+                 "PROP_ADD": "49-51 MURRAY ST HOBART TAS 7000", "TENURE_TY": "Council"},
+                None)
+    if "slip.wa.gov.au" in url and "Bush_Fire" in url:
+        return (None, None)  # WA bushfire: no feature -> prone False
+    if "slip.wa.gov.au" in url:
+        return ({"Shape__Area": 402.1}, {"rings": [[[115, -32], [116, -32]]]})
+    if "NSW_BushFire" in url:
+        return ({"OBJECTID": 1}, None)  # NSW bushfire prone: True
+    if "Bushfire_Prone" in url:
+        return (None, None)  # ACT bushfire prone: False
+    if "SES_FloodMapping" in url:
+        return ({"OBJECTID": 7}, None)  # TAS mapped flood hazard: True
+    if "nsw.gov.au" in url:
+        return ({"lotnumber": "4", "planlabel": "DP123456", "lotidstring": "4//DP123456",
+                 "Shape__Area": 500.5}, {"rings": [[[151, -33], [152, -33]]]})
+    raise RuntimeError("unexpected url in test stub")
+
+state_intel._esri_point_query = _fake_point_query
+state_intel._cache.clear()
+
+r = c.get("/api/intel/state-property?lat=-33.8688&lon=151.2093&state=NSW", headers=H1)
+body = r.get_json()
+check("state intel NSW -> 200", r.status_code == 200 and body["ok"])
+check("state intel NSW parcel via OLF",
+      body["data"]["parcel"]["id"] == "Lot 2 DP111"
+      and body["data"]["parcel"]["areaSqm"] == 610.0
+      and body["data"]["parcelGeometry"])
+check("state intel NSW zoning attached",
+      body["data"]["zoning"]["category"] == "R3"
+      and "Medium Density" in body["data"]["zoning"]["name"])
+check("state intel NSW bushfire prone", body["data"]["bushfire"]["prone"] is True)
+_n_before = calls["n"]
+check("state intel NSW geometry cached",
+      c.get("/api/intel/state-property?lat=-33.8688&lon=151.2093&state=NSW",
+            headers=H1).status_code == 200 and calls["n"] == _n_before)
+
+r = c.get("/api/intel/state-property?lat=-35.2809&lon=149.13&state=ACT", headers=H1)
+body = r.get_json()
+check("state intel ACT parcel via OLF",
+      r.status_code == 200 and body["data"]["parcel"]["id"].startswith("Block 5"))
+check("state intel ACT bushfire prone", body["data"]["bushfire"]["prone"] is False)
+
+r = c.get("/api/intel/state-property?lat=-42.8821&lon=147.3272&state=TAS", headers=H1)
+body = r.get_json()
+check("state intel TAS parcel via OLF",
+      r.status_code == 200 and "PID 99" in body["data"]["parcel"]["id"])
+check("state intel TAS flood not point-queryable (raster)", body["data"].get("flood") is None)
+
+r = c.get("/api/intel/state-property?lat=-31.9523&lon=115.8613&state=WA", headers=H1)
+body = r.get_json()
+check("state intel WA boundary-only parcel + bushfire",
+      r.status_code == 200 and body["data"]["parcel"]["id"] is None
+      and body["data"]["bushfire"]["prone"] is False)
+
+r = c.get("/api/intel/state-property?lat=-12.46&lon=130.84&state=NT", headers=H1)
+body = r.get_json()
+check("state intel NT parcel via OLF",
+      r.status_code == 200 and body["data"]["parcel"]["id"] == "5606")
+
+check("state intel normalizers are pure",
+      state_intel._norm_tas({"PID": 1, "VOLUME": None, "FOLIO": None})["id"] == "PID 1")
+
+state_intel._esri_point_query = real_point_query
+olf.parcel = _real_olf_parcel
+olf.zoning = _real_olf_zoning
+state_intel._cache.clear()
+
+# --- daily refresh (government data re-fetched for saved addresses) ------
+import daily_refresh  # noqa: E402
+
+r = c.post("/api/scenarios", headers=H1, json={
+    "name": "Refresh me", "inputs": {
+        "state": "NSW", "address": "9 Shard Street",
+        "addressMeta": {"state": "NSW", "lat": -33.8688, "lon": 151.2093}}})
+check("create scenario for daily refresh", r.status_code == 201, r.get_json())
+
+refresh_calls = {"n": 0}
+
+
+def _olf_refresh_counter(lat, lon, state):
+    refresh_calls["n"] += 1
+    return (OLF_PARCEL, None)
+
+
+real_olf_refresh = olf.parcel
+olf.parcel = _olf_refresh_counter
+state_intel._cache.clear()
+summary = daily_refresh.run_once()
+check("daily refresh re-fetches located scenarios",
+      summary["refreshed"] >= 1 and refresh_calls["n"] >= 1 and summary["at"])
+check("daily refresh swallows per-address errors",
+      isinstance(summary["failed"], list))
+olf.parcel = real_olf_refresh
+
+os.environ["PA_NO_SCHEDULER"] = "1"
+daily_refresh.start_scheduler()
+check("scheduler disabled under PA_NO_SCHEDULER",
+      os.environ.get("PA_NO_SCHEDULER") == "1")
+os.environ.pop("PA_NO_SCHEDULER", None)
+
+# metric history snapshots + trend endpoint
+r = c.get("/api/suburbs", headers=H1)
+suburbs = r.get_json()["data"]
+stid2 = next(s["id"] for s in suburbs if s["name"] == "Streamtown")
+summary2 = daily_refresh.run_once()
+check("daily refresh snapshots suburb metrics into history",
+      (summary2.get("historyRows") or 0) >= 1)
+r = c.get(f"/api/suburbs/{stid2}/history", headers=H1)
+check("history endpoint responds", r.status_code == 200
+      and isinstance(r.get_json()["data"], dict))
+
+# state percentiles in benchmarks
+import census as _census
+rows = [
+    {"sa2_code_2021": "101021001", "irsd_score": 950, "leed_4": 1, "dwell_7": 5,
+     "tenure_owned": 30.0, "hhtype_6": 2.4},
+    {"sa2_code_2021": "201021001", "irsd_score": 1000, "leed_4": 2, "dwell_7": 5,
+     "tenure_owned": 35.0, "hhtype_6": 2.5},
+    {"sa2_code_2021": "301021001", "irsd_score": 1050, "leed_4": 3, "dwell_7": 5,
+     "tenure_owned": 40.0, "hhtype_6": 2.6},
+]
+bench = _census.build_benchmarks(rows)
+check("census benchmarks keep national fields",
+      bench["fields"]["irsd_score"]["p50"] == 1000)
+check("census benchmarks add per-state buckets",
+      sorted(bench["states"].keys()) == ["NSW", "QLD", "VIC"]
+      and bench["states"]["NSW"]["irsd_score"]["p50"] == 950)
+check("census state derivation maps all 8 codes",
+      [_census._state_from_code(f"{d}01021001") for d in "12345678"]
+      == ["NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"])
+
+# growth windows off the TVD series
+r = c.get("/api/markets/prices?state=NSW", headers=H1)
+pdata = r.get_json()["data"]
+check("markets prices expose growth windows",
+      "growth" in pdata and "NSW" in pdata.get("growth", {})
+      and "5yr" in pdata["growth"]["NSW"])
+
+# crosswalk: suburb gets sa2_code resolved via census names
+import time as _time
+_census._names_cache = {"data": [
+    {"code": "101021001", "name": "Streamtown", "state": "QLD"}],
+    "at": _time.time()}
+r = c.get("/api/suburbs", headers=H1)
+st_suburb = next(s for s in r.get_json()["data"] if s["id"] == stid2)
+check("suburb crosswalk resolves SA2 by name",
+      st_suburb.get("sa2Code") == "101021001")
+_census._names_cache = {"data": None, "at": 0.0}
+
+# data-status endpoint
+r = c.get("/api/admin/data-status", headers=BA)
+check("admin data-status for BA", r.status_code == 200
+      and any(d["dataset"].startswith("Census") for d in r.get_json()["data"]["datasets"]))
+r = c.get("/api/admin/data-status", headers=H1)
+check("403 without ba role: /api/admin/data-status", r.status_code == 403)
 
 # Postgres only: the Supabase pooler drops idle sessions, so the app must
 # reopen a dead connection instead of 500-ing every request.
@@ -1552,6 +2178,89 @@ check("report PDF includes the grouped deal check section",
 check("report PDF omits the section when dealCheck absent",
       "Deal check &amp; recommendation" not in report_mod.build_report_html(
           {"title": "t", "years": []}, {}))
+
+# Property-intelligence + listing-check sections (all-states coverage)
+_intel_ctx = {"overlays": {
+    "parcel": {"id": "Lot 4 DP123456", "areaSqm": 500.5, "locality": None,
+               "extra": {"planLabel": "DP123456"}},
+    "bushfireProne": True,
+    "intel": {"provider": "NSW Land Parcel and Property Theme",
+              "fetchedAt": "2026-11-22T10:00:00",
+              "sources": [{"label": "NSW Spatial Services"}]}}}
+_intel_html = report_mod.build_report_html({"title": "t", "years": []}, _intel_ctx)
+check("report PDF includes property intelligence section",
+      "Property intelligence" in _intel_html and "Lot 4 DP123456" in _intel_html
+      and "Bushfire prone" in _intel_html and "NSW Spatial Services" in _intel_html)
+check("report PDF omits property intelligence without overlays",
+      "Property intelligence" not in report_mod.build_report_html(
+          {"title": "t", "years": []}, {}))
+_lc_html = report_mod.build_report_html(
+    {"title": "t", "years": [],
+     "listingCheck": {"onMarket": True, "askingPrice": 700000,
+                      "agent": "Test Realty", "listedDate": "2026-10",
+                      "lastSoldPrice": 610000, "lastSoldDate": "2021-05",
+                      "confidence": "high", "url": "https://realestate.com.au/x"}}, {})
+check("report PDF includes listing check when present",
+      "Listing check (AI research)" in _lc_html and "Asking" in _lc_html
+      and "realestate.com.au/x" in _lc_html)
+check("report PDF omits listing check when absent",
+      "Listing check (AI research)" not in report_mod.build_report_html(
+          {"title": "t", "years": []}, {}))
+_sig_html = report_mod.build_report_html(
+    {"title": "t", "years": [],
+     "areaSignals": [{"name": "Test Rail Extension", "type": "transport",
+                      "status": "under_construction", "timeframe": "2029",
+                      "distanceKm": 1.8, "url": "https://example/rail"}]}, {})
+check("report PDF includes area signals when present",
+      "Infrastructure & planning signals" in _sig_html
+      and "Test Rail Extension" in _sig_html and "Under construction" in _sig_html)
+check("report PDF omits area signals when absent",
+      "Infrastructure & planning signals" not in report_mod.build_report_html(
+          {"title": "t", "years": []}, {}))
+
+# Modular reports: payload.sections gates the section set
+_sec_payload = {"title": "t",
+                "year1": {"grossRent": 27040, "preTaxCashFlow": -18000},
+                "years": [{"year": y + 1, "cumulativeAfterTaxCashFlow": -8500 * (y + 1)}
+                          for y in range(10)],
+                "exit": {"saleYear": 10, "calendarSaleYear": 2035, "salePrice": 900000,
+                         "netSaleProceeds": 300000, "totalNetPosition": 100000}}
+check("sections=['exit'] keeps exit, drops cash flow and who-pays",
+      "Exit &amp; CGT" in report_mod.build_report_html(
+          dict(_sec_payload, sections=["exit"]), {})
+      and "Cash flow analysis" not in report_mod.build_report_html(
+          dict(_sec_payload, sections=["exit"]), {})
+      and "Who pays the cost?" not in report_mod.build_report_html(
+          dict(_sec_payload, sections=["exit"]), {}))
+check("unknown sections fall back to the full report",
+      "Cash flow analysis" in report_mod.build_report_html(
+          dict(_sec_payload, sections=["nonsense"]), {})
+      and "Exit &amp; CGT" in report_mod.build_report_html(
+          dict(_sec_payload, sections=["nonsense"]), {}))
+check("omitted and empty sections render the full report",
+      "Cash flow analysis" in report_mod.build_report_html(dict(_sec_payload), {})
+      and "Exit &amp; CGT" in report_mod.build_report_html(
+          dict(_sec_payload, sections=[]), {}))
+_r2 = c.post(f"/api/scenarios/{RP_SID}/report", headers=BA,
+             json=dict(REPORT_PAYLOAD, sections=["exit"]))
+check("report route honours the sections body param",
+      _r2.status_code == 200 and b"%PDF" in _r2.data[:5], _r2.mimetype)
+
+# Excel honours sections: projections off drops the year sheet, cashflow off
+# drops the Overview assumptions block; default keeps both.
+from io import BytesIO as _BIO  # noqa: E402
+from openpyxl import load_workbook as _xl_load  # noqa: E402
+_xr = c.post(f"/api/scenarios/{RP_SID}/excel", headers=BA,
+             json=dict(REPORT_PAYLOAD, sections=["exit"]))
+_wb = _xl_load(_BIO(_xr.data))
+check("excel route honours sections — year sheet dropped",
+      _xr.status_code == 200 and "Year by year" not in _wb.sheetnames
+      and "Overview" in _wb.sheetnames, str(_wb.sheetnames))
+_xr2 = c.post(f"/api/scenarios/{RP_SID}/excel", headers=BA, json=REPORT_PAYLOAD)
+_wb2 = _xl_load(_BIO(_xr2.data))
+check("excel route keeps year sheet by default",
+      "Year by year" in _wb2.sheetnames and "Overview" in _wb2.sheetnames,
+      str(_wb2.sheetnames))
 _noscore = report_mod.build_report_html(
     {"title": "t", "years": [], "dealCheck": {"sa2": {"name": "X"},
      "overall": {"score": None, "verdictWord": "—", "headline": "nodata"},
