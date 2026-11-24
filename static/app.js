@@ -374,7 +374,7 @@
     if (q.length < 6) return;
     const seq = ++locateSeq;
     try {
-      const item = await api('/api/address/locate?q=' + encodeURIComponent(q) + addressHints(picker.scope, q));
+      const item = await trackLocate(api('/api/address/locate?q=' + encodeURIComponent(q) + addressHints(picker.scope, q)));
       if (seq !== locateSeq) return;
       if (!item) return;
       picker.onPick.located(item);
@@ -416,7 +416,7 @@
       const lon = numOrNull(meta.lon);
       if (lat !== null && lon !== null && meta.streetNumber) continue;
       try {
-        const item = await api('/api/address/locate?q=' + encodeURIComponent(addr) + addressHints('property', addr));
+        const item = await trackLocate(api('/api/address/locate?q=' + encodeURIComponent(addr) + addressHints('property', addr)));
         if (!item) continue;
         p.addressMeta = metaFrom(item);
         changed = true;
@@ -427,7 +427,7 @@
       const meta = state.inputs.pporAddressMeta || {};
       if (!(numOrNull(meta.lat) !== null && meta.streetNumber)) {
         try {
-          const item = await api('/api/address/locate?q=' + encodeURIComponent(pporAddr) + addressHints('ppor', pporAddr));
+          const item = await trackLocate(api('/api/address/locate?q=' + encodeURIComponent(pporAddr) + addressHints('ppor', pporAddr)));
           if (item) {
             state.inputs.pporAddressMeta = metaFrom(item);
             changed = true;
@@ -440,6 +440,16 @@
       if (propertySectionVisible()) renderProperty();
     }
   }
+
+  // Save serializes state.inputs — a just-typed address must not persist
+  // before its locate lands, so saves await these in flight.
+  let pendingLocates = [];
+  function trackLocate(p) {
+    pendingLocates.push(p);
+    p.catch(() => {}).finally(() => { pendingLocates = pendingLocates.filter((q) => q !== p); });
+    return p;
+  }
+  async function drainLocates() { await Promise.allSettled(pendingLocates); }
 
   function pickPropertyAddress(item, auto) {
     $('#address-input').value = item.address; // programmatic — fires no input event
@@ -1289,11 +1299,28 @@
     return dp ? Number(v).toFixed(dp) : Math.round(v).toLocaleString();
   }
 
+  // One popup line per selected metric (primary first): value + unit +
+  // vintage, note beneath. Missing data renders as "—", never skipped.
+  function heatPopupHtml(keys, props) {
+    return keys.map((k) => heatMetricDef(k)).filter(Boolean).map((def) => {
+      const v = heatValue(def, props);
+      const snap = def.dataset ? (heatDatasetRows.get(def.dataset) || {}).data : null;
+      const vint = snap ? ((snap.vintage || {})[def.key]
+        || Object.values(snap.vintage || {})[0] || '') : '';
+      return `${escapeHtml(def.label)}: <strong>${v == null ? '—'
+        : escapeHtml(heatFmt(def, v) + def.unit)}</strong>`
+        + (vint ? ` <small>· ${escapeHtml(vint)}</small>` : '')
+        + (def.note ? `<br><span style="color:#64748b">${escapeHtml(def.note)}</span>` : '');
+    }).join('<br>');
+  }
+
   function heatColor(def, v, min, max) {
+    // clamp: percentile scaling lets real values sit outside [min, max]
     const raw = max > min ? (v - min) / (max - min) : 0;
     const t = def.invert ? 1 - raw : raw;
-    return HEAT_SOURCE.ramp[Math.min(HEAT_SOURCE.ramp.length - 1,
-      Math.floor(t * HEAT_SOURCE.ramp.length))];
+    const i = Math.max(0, Math.min(HEAT_SOURCE.ramp.length - 1,
+      Math.floor(t * HEAT_SOURCE.ramp.length)));
+    return HEAT_SOURCE.ramp[i];
   }
 
   function heatLegendInto(sel, def, min, max, vintage) {
@@ -1368,7 +1395,7 @@
   // ctl = { layer, legendSel, labels }. Paints the metric over `map`'s
   // viewport; safe to call repeatedly (old layer is replaced, and a paint
   // that finishes after a newer call started abandons instead of clobbering).
-  async function paintHeatInto(map, ctl, metricKey) {
+  async function paintHeatInto(map, ctl, metricKey, popupKeys) {
     const def = heatMetricDef(metricKey);
     if (!def || !map) return;
     const seq = (ctl.seq = (ctl.seq || 0) + 1);
@@ -1379,6 +1406,7 @@
       if (!snap) {
         const el = $(ctl.legendSel);
         if (el) el.innerHTML = '';
+        heatCaptionInto(def, null); // dataset unavailable — fall back to census wording
         toast('Area dataset unavailable for this metric: ' + def.dataset);
         return;
       }
@@ -1401,7 +1429,13 @@
     if (!feats.length) { toast('No area data for this map area — zoom to an urban area'); return; }
     if (ctl.seq !== seq) return;
     const vals = feats.map((f) => heatValue(def, f.properties));
-    const min = Math.min(...vals), max = Math.max(...vals);
+    // colour ramp on the 2nd–98th percentile — a few genuinely extreme SA2s
+    // (e.g. remote SALM areas north of 90%) must not wash out the scale;
+    // popups and tooltips keep the true values
+    const sorted = [...vals].sort((a, b) => a - b);
+    const q = (t) => sorted[Math.max(0, Math.min(sorted.length - 1,
+      Math.round((sorted.length - 1) * t)))];
+    const min = q(0.02), max = q(0.98);
     const vint = snap ? (snap.vintage || {})[def.key]
       || Object.values(snap.vintage || {})[0] || '' : '';
     if (ctl.layer) { map.removeLayer(ctl.layer); }
@@ -1413,9 +1447,7 @@
         const props = f.properties;
         const v = heatValue(def, props);
         const line = `<strong>${escapeHtml(props.sa2_name_2021)}</strong><br>` +
-          `${escapeHtml(def.label)}: <strong>${heatFmt(def, v)}${def.unit}</strong>` +
-          (vint ? ` <small>· ${escapeHtml(vint)}</small>` : '') +
-          (def.note ? `<br><span style="color:#64748b">${escapeHtml(def.note)}</span>` : '');
+          heatPopupHtml(popupKeys || [metricKey], props);
         if (ctl.labels) {
           layer.bindTooltip(`<span class="heat-label">${heatFmt(def, v)}${def.unit}</span>`,
             { permanent: true, direction: 'center', className: 'heat-label-tip',
@@ -1426,14 +1458,70 @@
     });
     ctl.layer.addTo(map);
     heatLegendInto(ctl.legendSel, def, min, max, vint);
+    heatCaptionInto(def, snap);
+  }
+
+  // Attribution under the heat map — per-dataset for areastats snapshots
+  // (release + vintage), census wording otherwise.
+  function heatCaptionInto(def, snap) {
+    const el = $('#hm-caption');
+    if (!el) return;
+    const tail = "Values load for the visible map area; the colour ramp runs light → dark within what's on screen.";
+    if (def && def.dataset && snap) {
+      const vint = (snap.vintage || {})[def.key] || Object.values(snap.vintage || {})[0] || '';
+      el.textContent = `${snap.release || 'Area dataset'}${vint ? ' · ' + vint : ''
+        } — aggregated small-area benchmarks from the baked snapshot. ${tail}`;
+    } else {
+      el.textContent = `2021 Census (SA2 level) © Australian Bureau of Statistics via ArcGIS — free and open. ${tail}`;
+    }
   }
 
   // ------------------------------------------------------------------
   // Dedicated Heat maps page
   // ------------------------------------------------------------------
 
-  const hm = { map: null, metric: 'tenure_4', moveTimer: null,
+  const HM_CAP = 6;
+  const hm = { map: null, selected: loadHmSelection(), moveTimer: null,
     ctl: { layer: null, legendSel: '#hm-legend', labels: false } };
+  const hmPrimary = () => hm.selected[hm.selected.length - 1];
+
+  function loadHmSelection() {
+    try {
+      const v = JSON.parse(localStorage.getItem('pa_hm_metrics') || '[]');
+      const ok = Array.isArray(v) ? v.filter((k) => heatMetricDef(k)) : [];
+      return ok.length ? ok.slice(0, HM_CAP) : ['tenure_4'];
+    } catch (e) { return ['tenure_4']; }
+  }
+
+  function saveHmSelection() {
+    try { localStorage.setItem('pa_hm_metrics', JSON.stringify(hm.selected)); } catch (e) {}
+  }
+
+  function hmSyncChips() {
+    $$('#hm-groups .chip').forEach((c) => {
+      const on = hm.selected.includes(c.dataset.hmMetric);
+      c.classList.toggle('active', on);
+      c.classList.toggle('chip-primary', on && c.dataset.hmMetric === hmPrimary());
+      c.setAttribute('aria-pressed', String(on));
+    });
+  }
+
+  // Repaint entry for the dedicated page — empty selection clears the map
+  // (seq bump so an in-flight paint can't land a layer afterwards).
+  function hmPaint() {
+    if (!hm.selected.length) {
+      hm.ctl.seq = (hm.ctl.seq || 0) + 1;
+      if (hm.ctl.layer) { hm.map.removeLayer(hm.ctl.layer); hm.ctl.layer = null; }
+      const el = $('#hm-legend');
+      if (el) el.innerHTML = '';
+      const cap = $('#hm-caption');
+      if (cap) cap.textContent = 'Select one or more metrics to paint the map.';
+      return;
+    }
+    // popup lines lead with the colour metric, then enable order
+    const rest = hm.selected.slice(0, -1);
+    paintHeatInto(hm.map, hm.ctl, hmPrimary(), [hmPrimary(), ...rest]);
+  }
 
   function heatGroupOptions() {
     const groups = [];
@@ -1470,7 +1558,7 @@
         clearTimeout(hm.moveTimer);
         hm.moveTimer = setTimeout(() => {
           if (!$('#section-heatmaps').classList.contains('hidden')) {
-            paintHeatInto(hm.map, hm.ctl, hm.metric);
+            hmPaint();
           }
         }, 700);
       });
@@ -1496,22 +1584,29 @@
       $('#hm-groups').innerHTML = heatGroupOptions().map((g) =>
         `<div class="chip-row-label">${escapeHtml(g.group)}</div>
          <div class="chip-row">${g.items.map((m) =>
-           `<button class="chip ${m.key === hm.metric ? 'active' : ''}"
+           `<button class="chip" aria-pressed="false"
              data-hm-metric="${m.key}" title="${escapeHtml(m.note || m.label)}">${escapeHtml(m.label)}</button>`).join('')}</div>`).join('');
+      hmSyncChips();
       $('#hm-groups').addEventListener('click', (ev) => {
         const chip = ev.target.closest('button[data-hm-metric]');
         if (!chip) return;
-        hm.metric = chip.dataset.hmMetric;
-        $$('#hm-groups .chip').forEach((c) =>
-          c.classList.toggle('active', c.dataset.hmMetric === hm.metric));
-        paintHeatInto(hm.map, hm.ctl, hm.metric);
+        const key = chip.dataset.hmMetric;
+        const i = hm.selected.indexOf(key);
+        if (i >= 0) hm.selected.splice(i, 1);
+        else if (hm.selected.length >= HM_CAP) {
+          toast('Up to 6 metrics at once — deselect one first');
+          return;
+        } else hm.selected.push(key);
+        saveHmSelection();
+        hmSyncChips();
+        hmPaint();
       });
       $('#hm-labels').addEventListener('change', (ev) => {
         hm.ctl.labels = ev.target.checked;
-        paintHeatInto(hm.map, hm.ctl, hm.metric); // cache hit → instant
+        hmPaint(); // cache hit → instant
       });
     }
-    setTimeout(() => { hm.map.invalidateSize(); paintHeatInto(hm.map, hm.ctl, hm.metric); }, 80);
+    setTimeout(() => { hm.map.invalidateSize(); hmPaint(); }, 80);
   }
 
   const lqHeatCtl = {
@@ -1590,7 +1685,12 @@
   }
 
   async function dcEvidence(suburb, comps, rentals) {
-    const st = (await dcStateGrowth5yr(state.inputs.state)) || {};
+    // benchmark against the property's own state when the address knows it,
+    // not the (possibly stale) portfolio-level state select
+    const subj = dealCheckSubject();
+    const stCode = String((subj && subj.meta && subj.meta.state) || state.inputs.state || '')
+      .toUpperCase().replace('VICTORIA', 'VIC').replace('QUEENSLAND', 'QLD');
+    const st = (await dcStateGrowth5yr(stCode)) || {};
     return { comps: comps || state.comps || [], rentals: rentals || state.rentals || [],
              suburb, stateGrowth5yr: st.pct, stateGrowthLabel: st.label };
   }
@@ -1931,7 +2031,10 @@
 
   function fmtWhen(iso) {
     if (!iso) return '';
-    const d = new Date(iso);
+    // db timestamps are SQLite datetime('now') — UTC with no zone marker;
+    // parsing them as local inflated "x ago" by the UTC offset
+    const d = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(iso)
+      ? new Date(iso.replace(' ', 'T') + 'Z') : new Date(iso);
     if (isNaN(d)) return String(iso).slice(0, 16).replace('T', ' ');
     const diff = Date.now() - d.getTime();
     const mins = Math.round(diff / 60000);
@@ -2772,8 +2875,9 @@
   // QLD intel endpoint doubles as the default for unset states; the six
   // remaining jurisdictions route to state_intel.
   function intelEndpoint(jurisdiction) {
-    if (jurisdiction === 'VIC') return '/api/intel/vic-property';
-    if (!jurisdiction || jurisdiction === 'QLD') return '/api/intel/property';
+    // every branch returns a query-ready URL — callers append lat/lon bare
+    if (jurisdiction === 'VIC') return '/api/intel/vic-property?';
+    if (!jurisdiction || jurisdiction === 'QLD') return '/api/intel/property?';
     return '/api/intel/state-property?state=' + encodeURIComponent(jurisdiction) + '&';
   }
 
@@ -6338,6 +6442,7 @@
   $('#btn-save').addEventListener('click', async () => {
     const name = ($('#scenario-name').value || '').trim() || 'Untitled scenario';
     try {
+      await drainLocates(); // a just-typed address must land its meta first
       if (state.scenarioId) {
         await api('/api/scenarios/' + state.scenarioId, {
           method: 'PUT',
@@ -6364,6 +6469,7 @@
     const name = prompt('New scenario name:', base + ' (variant)');
     if (!name) return;
     try {
+      await drainLocates();
       const s = await api('/api/scenarios', {
         method: 'POST',
         body: JSON.stringify({ name, inputs: state.inputs }),
@@ -6406,6 +6512,7 @@
       setActiveTab(0);
       saveDraft();
       await loadComps();
+      await refreshPropertyLocations(); // saved meta may be null — locate before Deal Check needs it
     } catch (err) { toast('Load failed: ' + err.message); }
   });
 

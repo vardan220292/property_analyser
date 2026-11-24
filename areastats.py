@@ -22,6 +22,7 @@ on failure the stale snapshot stays. Bake with:
 import io
 import json
 import os
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -39,6 +40,15 @@ SALM_URL = ("https://www.dewr.gov.au/download/17068/"
             "salm-smoothed-sa2-datafiles-asgs-2021-june-quarter-2026/"
             "43875/salm-smoothed-sa2-datafiles-asgs-2021-june-quarter-2026"
             "/xlsx")
+SALM_PAGE = "https://www.dewr.gov.au/employment-research/small-area-labour-markets"
+# The download URL embeds the quarter, so discover the current one instead of
+# pinning it: SALM landing page -> stable resource page -> quartered download
+# links (SALM_URL stays as the fallback).
+_SALM_RESOURCE_RE = re.compile(
+    r"/employment-research/resources/salm-smoothed-sa2-datafiles-[a-z0-9-]+")
+_SALM_LINK_RE = re.compile(
+    r"/download/(\d+)/(salm-smoothed-sa2-datafiles-asgs-2021-[a-z0-9-]+?)/(\d+)/\2/xlsx")
+_SALM_MONTHS = {"march": 3, "june": 6, "september": 9, "december": 12}
 UA = {"User-Agent": "Mozilla/5.0 (property-analyser; research data refresh)"}
 
 # Stable field keys with their per-field vintage + label + chip formatting
@@ -193,9 +203,41 @@ def _fetch_erp(vintage_box):
     return rows
 
 
+def _salm_latest_url():
+    """Latest SA2 xlsx via the DEWR SALM pages: the landing page links a
+    stable resource page, which carries the quartered download URLs. None on
+    any failure — callers fall back to the pinned SALM_URL."""
+    try:
+        r = requests.get(SALM_PAGE, headers=UA, timeout=30)
+        r.raise_for_status()
+        m = _SALM_RESOURCE_RE.search(r.text.replace("\\/", "/"))
+        if not m:
+            return None
+        r = requests.get("https://www.dewr.gov.au" + m.group(0),
+                         headers=UA, timeout=30)
+        r.raise_for_status()
+        text = r.text.replace("\\/", "/")
+        best = None  # ((year, quarter), nid, slug, rid)
+        for nid, slug, rid in _SALM_LINK_RE.findall(text):
+            m = re.search(r"-([a-z]+)-quarter-(\d{4})$", slug)
+            if not m or m.group(1) not in _SALM_MONTHS:
+                continue
+            key = (int(m.group(2)), _SALM_MONTHS[m.group(1)])
+            if best is None or key > best[0]:
+                best = (key, nid, slug, rid)
+        if best:
+            _, nid, slug, rid = best
+            return "https://www.dewr.gov.au/download/%s/%s/%s/%s/xlsx" % (
+                nid, slug, rid, slug)
+    except Exception:
+        return None
+    return None
+
+
 def _fetch_salm(vintage_box):
     from openpyxl import load_workbook
-    r = requests.get(SALM_URL, headers=UA, timeout=120)
+    url = _salm_latest_url() or SALM_URL
+    r = requests.get(url, headers=UA, timeout=120)
     r.raise_for_status()
     wb = load_workbook(io.BytesIO(r.content), data_only=True, read_only=True)
     ws = wb[wb.sheetnames[0]]  # "Smoothed SA2 unemployment rate"

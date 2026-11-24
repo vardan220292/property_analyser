@@ -420,6 +420,10 @@ class Database:
                     cur = self._run(sql, args, returning=False)
                 else:
                     raise
+            if not self.dsn:
+                # Postgres autocommits; sqlite3 sits in an implicit
+                # transaction — without this every write is lost at shutdown
+                self._conn.commit()
             if self.dsn and getattr(cur, "description", None):
                 row = cur.fetchone()
                 return row["id"] if row else 0

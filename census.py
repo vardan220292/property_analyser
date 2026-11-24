@@ -504,5 +504,6 @@ def rows_endpoint():
         return jsonify({"ok": False, "error": "dataset snapshot not available"}), 503
     return jsonify({"ok": True, "data": {
         "key": key, "geo": snap.get("geo"), "asOf": snap.get("asOf"),
+        "release": snap.get("release"),
         "vintage": snap.get("vintage"), "rows": snap.get("rows"),
     }})

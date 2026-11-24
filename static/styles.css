@@ -1177,6 +1177,14 @@ details.advanced.has-warn > summary::before { color: var(--amber); }
   border-color: var(--pri);
 }
 
+/* multi-select heat chips: the colour metric (always .active too) gets a dot */
+.chip-primary::after {
+  content: '●';
+  margin-left: 0.3rem;
+  font-size: 0.6rem;
+  line-height: 1;
+}
+
 .prop-map-status {
   margin-top: 0.5rem;
   padding: 0.375rem 0.625rem;
