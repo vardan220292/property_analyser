@@ -31,21 +31,40 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 
 import auth
+import ai_research
+import admin
 import areadata
+import attachments
+import census
 import comps_search
 import db
 import domain_api
+import markets
 import portal
+import portfolios
 import presentations
 import actuals
 import branding
 import qld_intel
+import state_intel
+import sales
+import vic_intel
 import ratelimit
 import scenarios
 import seeds
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+# DB_PATH says "use this SQLite file"; a non-empty DATABASE_URL (env or .env)
+# says "use Postgres" — and db.init() lets DATABASE_URL win. Silently running
+# against Postgres while the operator thinks they're on a throwaway SQLite
+# file has burned real data before, so refuse the ambiguous config.
+if os.environ.get("DB_PATH") and os.environ.get("DATABASE_URL"):
+    raise SystemExit(
+        "Both DB_PATH and DATABASE_URL are set — the app would talk to "
+        "Postgres, not DB_PATH. Unset one of them, or export DATABASE_URL= "
+        "(empty) to force the SQLite file.")
 
 PORT = int(os.environ.get("PORT", "4180"))
 HOST = os.environ.get("HOST", "127.0.0.1")
@@ -62,6 +81,7 @@ app = Flask(__name__, static_folder=None)
 # ---------------------------------------------------------------------------
 
 @app.route("/")
+@app.route("/reset")
 def index():
     return send_from_directory(STATIC_DIR, "index.html")
 
@@ -77,6 +97,8 @@ def welcome():
 @app.route("/engine.js")
 @app.route("/portal.js")
 @app.route("/styles.css")
+@app.route("/design-system.css")
+@app.route("/dashboard-premium.css")
 def static_no_cache():
     # The actively-iterated files; never let the browser cache them.
     name = os.path.basename(request.path)
@@ -120,13 +142,27 @@ app.register_blueprint(auth.bp)
 app.register_blueprint(auth.otp_bp)
 app.register_blueprint(actuals.bp)
 app.register_blueprint(areadata.bp)
+app.register_blueprint(attachments.bp)
 app.register_blueprint(branding.bp)
+app.register_blueprint(census.bp)
+app.register_blueprint(markets.bp)
+app.register_blueprint(sales.bp)
 app.register_blueprint(comps_search.bp)
+app.register_blueprint(comps_search.bp_rentals)
+app.register_blueprint(ai_research.bp_markets)
+app.register_blueprint(ai_research.bp_rates)
+app.register_blueprint(ai_research.bp_suburbs)
+app.register_blueprint(ai_research.bp_property)
+app.register_blueprint(ai_research.bp_meta)
+app.register_blueprint(admin.bp)
 app.register_blueprint(domain_api.bp)
 app.register_blueprint(portal.bp)
+app.register_blueprint(portfolios.bp)
 app.register_blueprint(presentations.bp)
 app.register_blueprint(presentations.clients_bp)
 app.register_blueprint(qld_intel.bp)
+app.register_blueprint(vic_intel.bp)
+app.register_blueprint(state_intel.bp)
 app.register_blueprint(scenarios.bp)
 
 
@@ -161,6 +197,8 @@ def create_db():
 
 if __name__ == "__main__":
     create_db()
+    import daily_refresh
+    daily_refresh.start_scheduler()
     # Personal tool: loopback by default. HOST=0.0.0.0 shares on the LAN —
     # put it behind HTTPS (reverse proxy) before exposing it further.
     app.run(host=HOST, port=PORT, threaded=True)

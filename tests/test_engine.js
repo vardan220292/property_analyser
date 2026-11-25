@@ -445,6 +445,53 @@ check('empty properties list pads to one', E.normalizeInputs({ properties: [] })
 const flatOverride = E.calculateAll({ ipLvr: 0.9 });
 check('flat override lands on properties[0]', flatOverride.properties[0].metrics.ipLvrActual, 0.9, 0.0001);
 
+// -- ownershipStatus: only purchased properties join portfolio roll-ups --
+check('ownershipStatus defaults to considering',
+      E.normalizeInputs({ properties: [{}] }).properties[0].ownershipStatus, 'considering');
+const ownedMixed = E.normalizeInputs({ properties: [
+  { purchasePrice: 500000, weeklyRent: 450, ownershipStatus: 'purchased' },
+  { purchasePrice: 800000, weeklyRent: 600, ownershipStatus: 'under_offer' },
+  { purchasePrice: 900000, weeklyRent: 650 },
+]});
+const ownedAll = E.calculateAll(ownedMixed);
+check('status passes through to outputs',
+      ownedAll.properties[1].ownershipStatus, 'under_offer');
+check('full result aggregates all properties',
+      ownedAll.metrics.purchasePrice, 2200000, 1);
+const ownedOnly = E.ownedInputs(ownedMixed);
+checkTrue('ownedInputs keeps only purchased',
+          ownedOnly.properties.length === 1 && ownedOnly.properties[0].purchasePrice === 500000);
+const ownedResult = E.calculateAll(ownedOnly);
+check('roll-ups on ownedInputs count purchased only',
+      ownedResult.metrics.purchasePrice, 500000, 1);
+checkTrue('ownedInputs null when nothing purchased',
+          E.ownedInputs({ properties: [{ purchasePrice: 500000, ownershipStatus: 'considering' }] }) === null);
+checkTrue('ownedInputs null for plain legacy inputs (all default considering)',
+          E.ownedInputs({ properties: [{ purchasePrice: 500000 }] }) === null);
+
+// -- ownerTaxSplit: investor/partner breakdown reconciles to the blended tax --
+const jointInputs = E.normalizeInputs({
+  ownershipType: 'joint_50_50', owner1TaxableIncome: 200000, owner2TaxableIncome: 40000,
+  properties: [{ purchasePrice: 690000, weeklyRent: 725 }],
+});
+const jointRow = E.calculateAll(jointInputs).rows[0];
+const split = E.ownerTaxSplit(jointInputs, jointRow.taxablePropertyResult, 1);
+checkTrue('joint split has two owners at 50% share',
+          split.share === 0.5 && split.owner2 !== null);
+checkTrue('joint split sums to the engine refund',
+          Math.abs(split.total - jointRow.taxRefundOrCost) < 1);
+checkTrue('higher-income owner gets the larger credit (negative result)',
+          split.owner1 > split.owner2);
+const soleInputs = E.normalizeInputs({
+  ownershipType: 'sole', owner1TaxableIncome: 90000,
+  properties: [{ purchasePrice: 690000, weeklyRent: 725 }],
+});
+const soleRow = E.calculateAll(soleInputs).rows[0];
+const soleSplit = E.ownerTaxSplit(soleInputs, soleRow.taxablePropertyResult, 1);
+checkTrue('sole ownership: single owner, total equals refund',
+          soleSplit.owner2 === null
+          && Math.abs(soleSplit.total - soleRow.taxRefundOrCost) < 1);
+
 // -- land tax aggregates across the portfolio, allocated by land share --
 const twoLand = E.calculateAll({
   properties: [
@@ -733,6 +780,164 @@ check('NT has no foreign surcharge',
 check('resident default unchanged', E.transferDuty('NSW', 650000).duty, 23437);
 check('foreign buyerType flows into funding',
   E.calculateAll({ state: 'NSW', buyerType: 'foreign' }).upfront.transferDuty, 95437);
+
+// =====================================================================
+// Deal verdicts (Deal Check phase 2)
+// =====================================================================
+
+{
+  const SUB = { medianPrice: 650000, medianRent2Bed: 550, medianRent3Bed: 650,
+                medianRent4Bed: 780, vacancyPct: 1.8, growth5yrPct: 28,
+                populationGrowthPct: 2.1, approvalsRatio: 0.9 };
+  const METRICS = { grossYield: 0.052, year1AfterTaxCashFlow: -3000,
+                    weeklyOutOfPocket: 40 };
+
+  const v = (inputs, metrics, suburb) => {
+    const r = E.dealVerdicts(inputs, metrics, suburb);
+    return Object.fromEntries(r.verdicts.map((x) => [x.key, x]));
+  };
+
+  const fair = v({ purchasePrice: 650000, weeklyRent: 650, bedrooms: 3 }, METRICS, SUB);
+  check('six deal verdicts', Object.keys(fair).length, 6);
+  check('all deal verdicts carry group=deal',
+        E.dealVerdicts({}, METRICS, SUB).verdicts.every((x) => x.group === 'deal'), true);
+  check('fair price scores strong', fair.price_vs_market.status, 'strong');
+  check('yield 5.2% is strong', fair.gross_yield.status, 'strong');
+  check('$40/wk out of pocket sits at the ok/watch boundary (score 42)',
+        fair.cash_flow.status, 'ok'); // 40 maps exactly to 42
+  check('vacancy 1.8% strong', fair.vacancy_risk.status, 'strong');
+  check('rent at median is strong', fair.rent_positioning.status, 'strong');
+  check('growth 28% strong', fair.growth_outlook.status, 'strong');
+
+  const pricey = v({ purchasePrice: 950000, weeklyRent: 600, bedrooms: 3 }, METRICS, SUB);
+  check('46% above median is watch', pricey.price_vs_market.status, 'watch');
+  check('optimistic rent (600 vs 650 median) still lettable',
+        pricey.rent_positioning.status, 'strong');
+  check('dealVerdicts avg reflects mix',
+        E.dealVerdicts({ purchasePrice: 650000, weeklyRent: 650 }, METRICS, SUB).avg > 50,
+        true);
+
+  const noSub = v({ purchasePrice: 650000, weeklyRent: 650, bedrooms: 3 }, METRICS, null);
+  check('no suburb → data-dependent verdicts nodata',
+        noSub.price_vs_market.status === 'nodata'
+        && noSub.vacancy_risk.status === 'nodata'
+        && noSub.growth_outlook.status === 'nodata', true);
+  check('no suburb keeps input-only verdicts',
+        noSub.gross_yield.status === 'strong' && noSub.cash_flow.status === 'ok', true);
+  check('no suburb → avg from the two scored verdicts',
+        E.dealVerdicts({ purchasePrice: 650000, weeklyRent: 650 }, METRICS, null).avg != null, true);
+
+  const vgo = v({ purchasePrice: 720000, weeklyRent: 650, bedrooms: 3 }, METRICS,
+                 { medianPrice: 650000, medianPriceSource: 'VIC Valuer-General' });
+  check('VGO fallback scores the price verdict (1.11× median → ok)',
+        vgo.price_vs_market.status, 'ok');
+  check('VGO source surfaces in the median chip note',
+        vgo.price_vs_market.metrics.some((m) =>
+          (m.note || '').includes('VIC Valuer-General')), true);
+
+  const bedMatch = v({ purchasePrice: 650000, weeklyRent: 720, bedrooms: 4 }, METRICS, SUB);
+  check('4-bed uses medianRent4Bed (720 vs 780 ≈ ok band)',
+        bedMatch.rent_positioning.status === 'strong'
+        && bedMatch.rent_positioning.metrics.some((m) => m.label.includes('4-bed')), true);
+  check('2-bed matches the ≤2 band (700 vs 550 = 1.27× → ok)',
+        v({ purchasePrice: 650000, weeklyRent: 700, bedrooms: 2 }, METRICS, SUB)
+          .rent_positioning.status, 'ok');
+
+  const twoBed = v({ purchasePrice: 650000, weeklyRent: 650, bedrooms: 2 }, METRICS, SUB);
+  check('2-bed price uses 0.8 bedroom factor (est. median 520k → 1.25× → watch)',
+        twoBed.price_vs_market.status, 'watch');
+  check('2-bed est. median chip value',
+        twoBed.price_vs_market.metrics.find((m) => m.label.includes('Est. median')).value,
+        520000);
+  check('3-bed price factor is neutral (1.0)', fair.price_vs_market.status, 'strong');
+}
+
+// =====================================================================
+// Market-evidence verdicts (Deal Check phase 3)
+// =====================================================================
+
+{
+  const SUB = { medianDaysOnMarket: 28, growth5yrPct: 28 };
+  const EV = {
+    comps: [{ soldPrice: 660000, beds: 3 }, { soldPrice: 655000, beds: 3 },
+            { soldPrice: 670000, beds: 3 }],
+    rentals: [{ rentWeekly: 655, bedrooms: 3 }, { rentWeekly: 645, bedrooms: 3 },
+              { rentWeekly: 660, bedrooms: 3 }],
+    suburb: SUB,
+    stateGrowth5yr: 22.0,
+    stateGrowthLabel: 'Brisbane 5-yr median growth (ABS)',
+  };
+  const mv = (inputs, ev) => {
+    const r = E.marketVerdicts(inputs, ev);
+    return Object.fromEntries(r.verdicts.map((x) => [x.key, x]));
+  };
+  const good = mv({ purchasePrice: 650000, weeklyRent: 650, bedrooms: 3 }, EV);
+  check('four market verdicts', Object.keys(good).length, 4);
+  check('all market verdicts carry group=market',
+        E.marketVerdicts({}, EV).verdicts.every((x) => x.group === 'market'), true);
+  check('sales median 660k vs 650k price → strong', good.comps_price.status, 'strong');
+  check('lettings median 650 vs 650 rent → strong', good.comps_rent.status, 'strong');
+  check('28 days on market → strong', good.days_on_market.status, 'strong');
+  check('28% suburb vs 22% state → strong', good.growth_vs_state.status, 'strong');
+  check('market avg is high', E.marketVerdicts(
+        { purchasePrice: 650000, weeklyRent: 650, bedrooms: 3 }, EV).avg > 70, true);
+
+  const stretch = mv({ purchasePrice: 850000, weeklyRent: 850, bedrooms: 3 },
+                      { comps: EV.comps, rentals: EV.rentals,
+                        suburb: { medianDaysOnMarket: 95, growth5yrPct: 2 },
+                        stateGrowth5yr: 20 });
+  check('paying 29% above sales median → watch', stretch.comps_price.status, 'watch');
+  check('rent 30% above lettings → watch', stretch.comps_rent.status, 'watch');
+  check('95 days on market → watch', stretch.days_on_market.status, 'watch');
+  check('18pts below state growth → watch', stretch.growth_vs_state.status, 'watch');
+
+  const empty = mv({ purchasePrice: 650000, weeklyRent: 650, bedrooms: 3 }, {});
+  check('no evidence → all four nodata, avg null',
+        Object.values(empty).every((x) => x.status === 'nodata')
+        && E.marketVerdicts({}, {}).avg == null, true);
+
+  const mixed = mv({ purchasePrice: 650000, weeklyRent: 650, bedrooms: 3 },
+                   { comps: [{ soldPrice: 660000, beds: 3 }, { soldPrice: 640000, beds: 2 },
+                             { soldPrice: 630000, beds: 2 }],
+                     suburb: { medianDaysOnMarket: 40 } });
+  check('comps work with rentals missing', mixed.comps_price.status != null
+        && mixed.comps_rent.status === 'nodata', true);
+  check('only 1 same-bed comp falls back to all comps (no bed tag)',
+        !mixed.comps_price.metrics[0].label.includes('(3-bed)'), true);
+}
+
+// =====================================================================
+// Deal Check bundle composer (shared by app, portal and PDF)
+// =====================================================================
+
+{
+  const SUB = { medianPrice: 650000, medianRent3Bed: 650, vacancyPct: 1.8,
+                growth5yrPct: 28, medianDaysOnMarket: 28 };
+  const b = E.dealCheckBundle({
+    census: { sa2: { name: 'Testville' },
+              overall: { score: 60, headline: 'census-only headline' },
+              verdicts: [{ key: 'rental_demand', question: 'Q1', status: 'strong',
+                           score: 80, headline: 'h', metrics: [] }],
+              source: 'ABS' },
+    inputs: { purchasePrice: 650000, weeklyRent: 650, bedrooms: 3, state: 'QLD' },
+    metrics: { grossYield: 0.052, weeklyOutOfPocket: 40 },
+    suburb: SUB,
+    evidence: { comps: [{ soldPrice: 660000, beds: 3 }, { soldPrice: 655000, beds: 3 },
+                        { soldPrice: 670000, beds: 3 }],
+                suburb: SUB, stateGrowth5yr: 22 },
+  });
+  check('bundle blends three lenses: 11 verdicts (1 fixture area + 6 deal + 4 market)',
+        b.verdicts.length, 11);
+  check('bundle overall blends lens averages (census 60, deal/market high → strong)',
+        b.overall.status === 'strong' && b.overall.verdictWord === 'PASS', true);
+  check('bundle groups present', ['area', 'deal', 'market'].every((g) =>
+        b.verdicts.some((v) => v.group === g)), true);
+  check('bundle carries sa2 + source', b.sa2.name === 'Testville' && b.source === 'ABS', true);
+
+  const bare = E.dealCheckBundle({ inputs: { purchasePrice: 500000, weeklyRent: 500 } });
+  check('bare inputs → 10 verdicts (6 deal + 4 market), overall nodata',
+        bare.verdicts.length === 10 && bare.overall.status === 'nodata', true);
+}
 
 // =====================================================================
 // Summary

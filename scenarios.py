@@ -20,8 +20,11 @@ import math
 
 from flask import Blueprint, g, jsonify, request
 
+import attachments
 import db
+import report as report_mod
 from auth import require_auth
+from datetime import datetime
 
 bp = Blueprint("scenarios", __name__, url_prefix="/api/scenarios")
 
@@ -35,6 +38,7 @@ _ENUM_FIELDS = {
     "state": {"QLD", "NSW", "VIC", "SA", "WA", "TAS", "NT", "ACT"},
     "buyerType": {"resident", "foreign"},
     "propertyType": {"house", "unit", "townhouse"},
+    "ownershipStatus": {"considering", "under_offer", "purchased"},
     "ownershipType": {"sole", "joint_50_50"},
     "ipRepaymentType": {"interest_only", "principal_and_interest"},
     "pporRepaymentType": {"interest_only", "principal_and_interest"},
@@ -121,6 +125,10 @@ def validate_inputs(inputs):
     if inputs.get("ownershipType") == "joint_50_50":
         if inputs.get("owner1OwnershipPercent", 0.5) + inputs.get("owner2OwnershipPercent", 0.5) > 1.001:
             fields["owner1OwnershipPercent"] = "ownership shares must total 100%"
+
+    lo, hi = inputs.get("buyRangeLow"), inputs.get("buyRangeHigh")
+    if isinstance(lo, (int, float)) and isinstance(hi, (int, float)) and lo > hi:
+        fields["buyRangeHigh"] = "must be ≥ buy range low"
     return fields
 
 
@@ -162,12 +170,111 @@ def _owned(sid):
 @require_auth
 def list_scenarios():
     rows = db.db().fetch_all(
-        "SELECT id, name, description, address, suburb_id, created_at, updated_at "
-        "FROM scenarios WHERE user_id = ? "
+        "SELECT id, name, description, address, suburb_id, created_at, updated_at, "
+        "inputs_json FROM scenarios WHERE user_id = ? "
         "ORDER BY updated_at DESC",
         (g.user["id"],),
     )
-    return jsonify({"ok": True, "data": [_scenario_row(r, with_inputs=False) for r in rows]})
+    out = []
+    for r in rows:
+        item = _scenario_row(r, with_inputs=False)
+        try:
+            inputs = json.loads(r["inputs_json"])
+        except (ValueError, TypeError):
+            inputs = {}
+        prop = (inputs.get("properties") or [{}])[0]
+        item["ownershipStatus"] = prop.get("ownershipStatus") or "considering"
+        item["price"] = prop.get("purchasePrice")
+        item["rent"] = prop.get("weeklyRent")
+        out.append(item)
+    return jsonify({"ok": True, "data": out})
+
+
+@bp.get("/portfolio")
+@require_auth
+def portfolio():
+    """Everything the client-side engine needs to aggregate the whole
+    portfolio: full inputs per scenario plus ownership status. The engine
+    runs in the browser, so the heavy math happens there."""
+    rows = db.db().fetch_all(
+        "SELECT id, name, address, inputs_json, updated_at FROM scenarios "
+        "WHERE user_id = ? ORDER BY updated_at DESC", (g.user["id"],))
+    out = []
+    for r in rows:
+        try:
+            inputs = json.loads(r["inputs_json"])
+        except (ValueError, TypeError):
+            continue
+        prop = (inputs.get("properties") or [{}])[0]
+        out.append({
+            "id": r["id"],
+            "name": r["name"],
+            "address": r["address"],
+            "updatedAt": r["updated_at"],
+            "ownershipStatus": prop.get("ownershipStatus") or "considering",
+            "inputs": inputs,
+        })
+    return jsonify({"ok": True, "data": out})
+
+
+@bp.get("/export")
+@require_auth
+def export_all():
+    """One-file JSON export of everything belonging to the current user."""
+    scen = db.db().fetch_all(
+        "SELECT * FROM scenarios WHERE user_id = ? ORDER BY id", (g.user["id"],))
+    out = []
+    for row in scen:
+        item = {
+            "id": row["id"], "name": row["name"], "address": row["address"],
+            "description": row["description"], "createdAt": row["created_at"],
+            "inputs": json.loads(row["inputs_json"] or "{}"),
+            "comps": [], "rentals": [], "actuals": [],
+        }
+        item["comps"] = db.db().fetch_all(
+            "SELECT address, sold_price, sold_date, beds, land_m2, rent_estimate, notes "
+            "FROM comps WHERE scenario_id = ?", (row["id"],))
+        item["rentals"] = db.db().fetch_all(
+            "SELECT address, rent_weekly, bedrooms, property_type, notes "
+            "FROM rental_comps WHERE scenario_id = ?", (row["id"],))
+        item["actuals"] = db.db().fetch_all(
+            "SELECT property_index, period_start, period_end, rent_received, expenses, "
+            "loan_balance, valuation FROM portfolio_actuals WHERE scenario_id = ?", (row["id"],))
+        out.append(item)
+    suburb_rows = db.db().fetch_all("SELECT * FROM suburbs")
+    suburbs = [{
+        "id": s["id"], "name": s["name"], "postcode": s["postcode"], "state": s["state"],
+        "medianPrice": s["median_price"], "medianRent3Bed": s["median_rent_3bed"],
+        "vacancyPct": s["vacancy_pct"], "growth5yrPct": s["growth_5yr_pct"],
+    } for s in suburb_rows]
+    return jsonify({"ok": True, "data": {
+        "exportedAt": datetime.utcnow().isoformat(),
+        "scenarios": out,
+        "suburbs": suburbs,
+    }})
+
+
+@bp.patch("/<int:sid>/status")
+@require_auth
+def set_status(sid):
+    """Pipeline: move a scenario's ownership status (all its properties)."""
+    row = _owned(sid)
+    if not row:
+        return jsonify({"ok": False, "error": "scenario not found"}), 404
+    status = (request.get_json(silent=True) or {}).get("status")
+    if status not in ("considering", "under_offer", "purchased"):
+        return jsonify({"ok": False,
+                        "error": "status must be considering, under_offer or purchased"}), 400
+    try:
+        inputs = json.loads(row["inputs_json"])
+    except (ValueError, TypeError):
+        inputs = {}
+    for prop in inputs.get("properties") or []:
+        prop["ownershipStatus"] = status
+    db.db().execute(
+        "UPDATE scenarios SET inputs_json = ?, updated_at = datetime('now') "
+        "WHERE id = ?", (json.dumps(inputs), sid))
+    return jsonify({"ok": True, "data": {"id": sid, "status": status}})
 
 
 @bp.get("/<int:sid>")
@@ -176,7 +283,35 @@ def get_scenario(sid):
     row = _owned(sid)
     if not row:
         return jsonify({"ok": False, "error": "scenario not found"}), 404
-    return jsonify({"ok": True, "data": _scenario_row(row)})
+    data = _scenario_row(row)
+    data["attachments"] = attachments.list_for_scenario(sid)
+    return jsonify({"ok": True, "data": data})
+
+
+@bp.post("/<int:sid>/report")
+@require_auth
+def report(sid):
+    """Full branded report pack for one scenario, from BA-posted figures."""
+    row = _owned(sid)
+    if not row:
+        return jsonify({"ok": False, "error": "scenario not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    payload.setdefault("title", row["name"])
+    ctx = report_mod.context_for_scenario(sid, g.user["id"])
+    return report_mod.render_report(payload, ctx)
+
+
+@bp.post("/<int:sid>/excel")
+@require_auth
+def excel(sid):
+    """Branded XLSX workbook for one scenario, from BA-posted figures."""
+    row = _owned(sid)
+    if not row:
+        return jsonify({"ok": False, "error": "scenario not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    payload.setdefault("title", row["name"])
+    ctx = report_mod.context_for_scenario(sid, g.user["id"])
+    return report_mod.render_excel(payload, ctx)
 
 
 @bp.post("")

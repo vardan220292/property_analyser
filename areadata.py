@@ -55,6 +55,7 @@ def _suburb_payload(row):
         "name": row["name"],
         "postcode": row["postcode"],
         "state": row["state"],
+        "sa2Code": row["sa2_code"] if "sa2_code" in row.keys() else None,
         "medianPrice": row["median_price"],
         "medianRent2Bed": row["median_rent_2bed"],
         "medianRent3Bed": row["median_rent_3bed"],
@@ -126,7 +127,30 @@ def _validate_suburb(body, partial=False):
 @require_auth
 def list_suburbs():
     rows = db.db().fetch_all("SELECT * FROM suburbs ORDER BY name, postcode")
+    _resolve_sa2_crosswalk(rows)
     return jsonify({"ok": True, "data": [_suburb_payload(r) for r in rows]})
+
+
+def _resolve_sa2_crosswalk(rows, cap=25):
+    """Fill in sa2_code for suburb rows missing it (lazy crosswalk via the
+    ABS SA2 name list). Bounded per call so first loads stay responsive."""
+    import census
+
+    missing = [r for r in rows if not r["sa2_code"]]
+    if not missing:
+        return 0
+    resolved = 0
+    for r in missing[:cap]:
+        try:
+            code = census.match_sa2_for_suburb(r["name"], r["state"])
+        except Exception:
+            code = None
+        if code:
+            db.db().execute("UPDATE suburbs SET sa2_code = ? WHERE id = ?",
+                            (code, r["id"]))
+            r["sa2_code"] = code
+            resolved += 1
+    return resolved
 
 
 @bp.post("/suburbs")
@@ -263,6 +287,23 @@ def _validate_comp(body):
         fields["beds"] = "must be between 0 and 10"
     values["beds"] = beds
     return values, fields
+
+
+@bp.get("/suburbs/<int:sid>/history")
+@require_auth
+def suburb_history(sid):
+    """Daily metric snapshots for one suburb — trend analysis over time.
+    Metrics with fewer than two recorded points are omitted."""
+    rows = db.db().fetch_all(
+        "SELECT metric, period, value FROM metric_history "
+        "WHERE subject_type = 'suburb' AND subject_id = ? "
+        "ORDER BY metric, period", (sid,))
+    by_metric = {}
+    for r in rows:
+        by_metric.setdefault(r["metric"], []).append(
+            {"period": r["period"], "value": r["value"]})
+    return jsonify({"ok": True, "data": {
+        k: v for k, v in by_metric.items() if len(v) >= 2}})
 
 
 @bp.get("/scenarios/<int:sid>/comps")

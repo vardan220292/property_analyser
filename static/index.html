@@ -15,33 +15,53 @@
       }
     } catch (e) {}
   </script>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%23102f3a%27/%3E%3Ctext x=%2732%27 y=%2742%27 text-anchor=%27middle%27 font-family=%27Arial%27 font-size=%2728%27 font-weight=%27bold%27 fill=%27white%27%3ERV%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/design-system.css">
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
 </head>
 <body>
   <div class="layout">
     <header class="navbar">
+      <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Toggle navigation" aria-expanded="true" title="Collapse navigation"><span></span><span></span><span></span></button>
       <a class="navbar-brand" href="/">
-        <span class="brand-mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 12.5 12 4l9 8.5"/><path d="M6 11v8h12v-8"/><path d="M10 19v-4h4v4"/>
-          </svg>
-        </span>
+        <span class="brand-logo brand-logo-fallback" aria-label="RV Enterprise">RV</span>
         <span class="brand-text">Property<b>Analyser</b></span>
       </a>
 
-      <nav id="nav">
-        <a data-target="overview" class="active">Dashboard</a>
-        <a data-target="inputs">Inputs</a>
-        <a data-target="property">Property</a>
-        <a data-target="area">Area</a>
-        <a data-target="cashflow">Cash Flow</a>
-        <a data-target="projections">Projections</a>
-        <a data-target="exit">Exit</a>
-        <a data-target="borrowing">Borrowing</a>
-        <a data-target="actuals">Actuals</a>
-        <a data-target="scenarios">Scenarios</a>
-        <a data-target="workspace" id="nav-workspace" class="hidden">Workspace</a>
+      <nav id="nav" aria-label="Main navigation">
+        <a data-target="overview" class="active nav-primary">Dashboard</a>
+        <a data-target="portfolio" class="nav-primary">Portfolio</a>
+        <details class="nav-group">
+          <summary>Analyse</summary>
+          <div class="nav-menu">
+            <a data-target="inputs">Investment inputs</a>
+            <a data-target="cashflow">Cash flow</a>
+            <a data-target="projections">Projections</a>
+            <a data-target="exit">Exit &amp; CGT</a>
+            <a data-target="borrowing">Borrowing capacity</a>
+            <a data-target="actuals">Actuals</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>Research</summary>
+          <div class="nav-menu">
+            <a data-target="property">Property intelligence</a>
+            <a data-target="area">Area &amp; suburb</a>
+            <a data-target="dealcheck">Deal check</a>
+            <a data-target="location">Location IQ</a>
+            <a data-target="heatmaps">Heat maps</a>
+            <a data-target="markets">Markets</a>
+            <a data-target="tools">Tools</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>Manage</summary>
+          <div class="nav-menu">
+            <a data-target="scenarios">Scenarios &amp; reports</a>
+            <a data-target="workspace" id="nav-workspace" class="hidden">Client workspace</a>
+          </div>
+        </details>
       </nav>
 
       <div class="navbar-right">
@@ -63,6 +83,7 @@
     <div class="subbar">
       <h1 id="page-title">Dashboard</h1>
       <div class="topbar-actions">
+        <button id="command-open" class="secondary command-open" type="button" title="Search pages and scenarios (⌘K)">⌕ <span>Quick search</span> <kbd>⌘ K</kbd></button>
         <select id="scenario-select"><option value="">— unsaved draft —</option></select>
         <input type="text" autocomplete="off" id="scenario-name" class="scenario-name" placeholder="Scenario name" data-field="scenarioName">
         <button id="btn-save" class="primary">Save</button>
@@ -73,7 +94,7 @@
 
     <div id="announce" class="announce hidden">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-      <span id="announce-text">Live Queensland property data is in the <b>Property</b> tab — free government data for every address.</span>
+      <span id="announce-text">Live government property data is in the <b>Property</b> tab — available layers depend on the address and state.</span>
       <button id="announce-close" class="icon-btn" title="Dismiss">&times;</button>
     </div>
 
@@ -81,86 +102,108 @@
       <div id="warnings" class="warnings hidden"></div>
 
       <!-- ==================== DASHBOARD ==================== -->
-      <section id="section-overview" class="section-page active">
-        <div class="dash-head">
-          <div>
-            <h1 class="dash-title">Dashboard</h1>
-            <div class="dash-sub">Welcome back, <span id="dash-user">there</span> — here's where your property research stands.</div>
+      <section id="section-overview" class="section-page active dashboard-v2">
+        <div class="dash-head dashboard-v2-head">
+          <div class="dash-heading-copy">
+            <div class="dash-eyebrow">PROPERTY WEALTH WORKSPACE</div>
+            <h1 class="dash-title">Your portfolio, at a glance.</h1>
+            <div class="dash-sub">A clear view of your current investment scenario, cash flow and long-term position.</div>
           </div>
-          <button id="dash-refresh" class="icon-btn lg" title="Refresh dashboard">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-          </button>
-        </div>
-
-        <div class="stat-grid" id="dash-stats"></div>
-
-        <div class="dash-row">
-          <div class="section">
-            <h2>Recent activity</h2>
-            <div class="hint">Your latest saves and updates.</div>
-            <div id="dash-activity" class="activity-list"></div>
-          </div>
-          <div class="section">
-            <h2>Score distribution</h2>
-            <div class="hint">How your analysed properties score on the 0&ndash;100 investment score.</div>
-            <div class="chart-box half-height"><canvas id="chart-dash-scores"></canvas></div>
+          <div class="dashboard-hero-metrics" id="dashboard-hero-metrics" aria-label="Portfolio highlights"></div>
+          <div class="dash-actions">
+            <span class="snapshot-context" id="portfolio-snapshot-context">Current scenario</span>
+            <button id="dash-refresh" class="secondary" title="Refresh dashboard">↻ Refresh</button>
+            <button id="dash-scenarios" class="secondary">Compare scenarios</button>
+            <button id="dash-add" class="primary">+ Add property</button>
           </div>
         </div>
 
-        <div class="section">
-          <div class="section-head-row">
-            <div>
-              <h2>Your properties</h2>
-              <div class="hint">Every property you've analysed. Open one to load it back into the model.</div>
-            </div>
-            <button id="dash-add" class="primary">Add property</button>
+        <div class="dashboard-context-strip">
+          <span class="dashboard-live-dot"></span>
+          <span>Scenario view</span>
+          <span class="dashboard-context-separator">·</span>
+          <span>Figures are projections based on your current inputs, not confirmed owned-asset balances.</span>
+        </div>
+
+        <div class="portfolio-snapshot dashboard-v2-kpis">
+          <div class="section-head-row"><div><div class="dash-eyebrow">FINANCIAL SNAPSHOT</div><h2>Investment position</h2><div class="hint">Key numbers for the scenario currently loaded in the analyser.</div></div></div>
+          <div class="portfolio-kpi-grid" id="portfolio-kpis"></div>
+        </div>
+
+        <section class="dashboard-property-showcase">
+          <div class="dashboard-showcase-heading">
+            <div><div class="dash-eyebrow">YOUR REAL ESTATE</div><h2>Properties in your portfolio</h2><p class="hint">Your home and investment properties, together in one view.</p></div>
+            <span class="dashboard-property-count" id="dashboard-property-count"></span>
           </div>
-          <div id="dash-props" class="prop-grid"></div>
-        </div>
+          <div class="dashboard-property-gallery" id="dashboard-property-gallery"></div>
+        </section>
 
-        <div class="section-head-row dash-break">
-          <div>
-            <h2>Portfolio analysis</h2>
-            <div class="hint">The numbers behind the current scenario.</div>
+        <div class="dashboard-v2-grid">
+          <div class="section dashboard-primary-panel">
+            <div class="section-head-row dashboard-chart-heading"><div><div class="dash-eyebrow">LONG-TERM OUTLOOK</div><h2>Property value, debt &amp; equity</h2><div class="hint">Projected portfolio position over your selected hold period.</div></div><label class="dashboard-period-control" for="dashboard-period">View <select id="dashboard-period" aria-label="Projection period"><option value="5">5 years</option><option value="10">10 years</option><option value="15">15 years</option><option value="20" selected>20 years</option></select></label></div>
+            <div class="chart-box dashboard-main-chart"><canvas id="chart-ov-equity"></canvas></div>
+          </div>
+          <div class="section dashboard-side-panel">
+            <div class="section-head-row"><div><div class="dash-eyebrow">PROPERTY BREAKDOWN</div><h2>Performance by property</h2><div class="hint">Year-one after-tax cash flow and gross yield.</div></div></div>
+            <div id="portfolio-performance" class="portfolio-performance"></div>
+            <div class="dashboard-health" id="dashboard-health" aria-live="polite"></div>
+            <div class="dashboard-warning-block"><div class="insight-heading"><h3>Things to review</h3><span class="hint">Model checks</span></div><div id="portfolio-alerts" class="portfolio-alerts"></div></div>
           </div>
         </div>
 
-        <div id="overview-cards" class="cards"></div>
 
-        <div class="section">
-          <h2>Property detail</h2>
-          <div class="hint">Every investment property in this scenario. Open a property's tab in Inputs to edit it.</div>
-          <div class="table-wrap"><table id="overview-props"></table></div>
-        </div>
 
-        <div class="section">
-          <h2>Growth scenarios</h2>
-          <div class="hint">The same portfolio at 3% / 5% / 7% capital growth — everything else unchanged.</div>
-          <div class="table-wrap"><table id="growth-table"></table></div>
-        </div>
+        <section class="dashboard-market-intelligence section">
+          <div class="section-head-row"><div><div class="dash-eyebrow">LIVE PROPERTY RESEARCH</div><h2>Market &amp; property intelligence</h2><div class="hint">Government and open-data information for the selected investment suburb. Address-level facts are shown separately from suburb estimates.</div></div><button class="secondary" id="dash-property-intel">Open property intelligence</button></div>
+          <div id="dashboard-market-intel" class="dashboard-market-grid"><div class="empty-note">Add a located property address to load available land and market information.</div></div>
+          <div class="dashboard-data-footnote">Sources and update dates are shown with each dataset. Suburb medians are market context, not an individual property's valuation or rent appraisal.</div>
+        </section>
 
-        <div class="section">
-          <h2>Growth &amp; equity</h2>
-          <div class="hint">Property value vs total investment debt vs net equity, over the full hold.</div>
-          <div class="chart-box"><canvas id="chart-ov-equity"></canvas></div>
-        </div>
-
-        <div class="chart-row">
-          <div class="section">
-            <h2>After-tax cash flow</h2>
-            <div class="hint">Negative bars = money out of pocket each year.</div>
+        <div class="dashboard-visual-grid">
+          <div class="section dashboard-visual-card cash-visual">
+            <div class="section-head-row"><div><div class="dash-eyebrow">CASH FLOW</div><h2>Annual cash required</h2><div class="hint">After-tax cash contribution by year. Positive bars need funding; negative bars indicate surplus.</div></div></div>
             <div class="chart-box half-height"><canvas id="chart-ov-cash"></canvas></div>
           </div>
-          <div class="section">
-            <h2>Cumulative position</h2>
-            <div class="hint">Equity + cumulative cash flow − initial cash. This is wealth created vs not buying.</div>
+          <div class="section dashboard-visual-card allocation-visual">
+            <div class="section-head-row"><div><div class="dash-eyebrow">PORTFOLIO MIX</div><h2>Portfolio property mix</h2><div class="hint">Share of total property assets, including your PPOR when entered.</div></div></div>
+            <div class="chart-box half-height"><canvas id="chart-ov-allocation"></canvas></div>
+          </div>
+          <div class="section dashboard-visual-card sale-visual">
+            <div class="section-head-row"><div><div class="dash-eyebrow">EXIT OUTLOOK</div><h2>Estimated sale proceeds</h2><div class="hint">Sale price less selling costs, CGT and outstanding loans.</div></div></div>
             <div class="chart-box half-height"><canvas id="chart-ov-cum"></canvas></div>
           </div>
         </div>
+
+        <div class="dashboard-lower-grid">
+          <div class="section dashboard-table-panel">
+            <div class="section-head-row"><div><div class="dash-eyebrow">INVESTMENT DETAIL</div><h2>Property breakdown</h2><div class="hint">Purchase price, rent, loan exposure and projected returns.</div></div></div>
+            <div class="table-wrap"><table id="overview-props"></table></div>
+          </div>
+          <div class="section dashboard-research-panel">
+            <div class="section-head-row"><div><div class="dash-eyebrow">RESEARCH LIBRARY</div><h2>Recently analysed</h2><div class="hint">Saved property opportunities.</div></div><button id="dash-add-inline" class="secondary">+ Add</button></div>
+            <div id="dash-focus" class="dash-focus" aria-label="Focus slot"></div>
+            <div id="dash-activity" class="activity-list"></div>
+            <div id="dash-props" class="dashboard-research-list"></div>
+          </div>
+        </div>
+
+        <div class="dashboard-secondary-details">
+          <details>
+            <summary>Explore more analysis — growth, annual cash required and sale proceeds</summary>
+            <div class="dashboard-detail-content">
+              <div class="section"><h2>Growth scenarios</h2><div class="hint">Compare 3%, 5% and 7% capital growth with all other assumptions unchanged.</div><div class="table-wrap"><table id="growth-table"></table></div></div>
+
+            </div>
+          </details>
+        </div>
+        <div id="dash-stats" class="dashboard-legacy-stats" aria-hidden="true"></div>
+        <div class="dashboard-legacy-chart"><canvas id="chart-dash-scores"></canvas></div>
       </section>
 
       <!-- ==================== INPUTS ==================== -->
       <section id="section-inputs" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">INVESTMENT WORKSPACE</div><h1 class="page-title">Investment assumptions</h1><div class="page-description">Build and refine your property scenario. Portfolio settings, property-specific assumptions and advanced controls remain available below.</div></div></div>
+        <div id="input-guide" class="input-guide" aria-label="Investment setup progress"></div>
         <div id="prop-tabs" class="prop-tabs"></div>
 
         <!-- Portfolio pane: settings shared across the whole portfolio -->
@@ -320,8 +363,25 @@
                 <input type="text" autocomplete="off" id="address-input" data-field="address" placeholder="6/14 Fawlers St, West Gladstone">
                 <div id="addr-dropdown" class="addr-dropdown hidden"></div>
                 <div class="addr-matched hidden" id="address-matched"></div></div>
+              <div class="field" id="ai-research-row" style="grid-column:1/-1">
+                <label>AI research <span class="unit" id="ai-research-model"></span></label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <button id="ai-go-comps" class="btn-ghost">Sold comps</button>
+                  <button id="ai-go-rentals" class="btn-ghost">Rental evidence</button>
+                  <button id="ai-go-listing" class="btn-ghost">Listing check</button>
+                  <button id="ai-go-signals" class="btn-ghost">Area signals</button>
+                  <span id="ai-research-msg" class="source-note"></span>
+                </div>
+              </div>
               <div class="field"><label>Purchase price <span class="unit">$</span></label>
                 <input type="number" data-field="purchasePrice"></div>
+              <div class="field"><label>Ownership status</label>
+                <select data-field="ownershipStatus">
+                  <option value="considering">Considering</option>
+                  <option value="under_offer">Under offer</option>
+                  <option value="purchased">Purchased</option>
+                </select>
+                <div class="hint">Only purchased properties count toward portfolio totals</div></div>
               <div class="field"><label>Weekly rent <span class="unit">$/wk</span></label>
                 <input type="number" data-field="weeklyRent"></div>
               <div class="field"><label>Bedrooms</label>
@@ -472,9 +532,11 @@
 
       <!-- ==================== PROPERTY INTELLIGENCE ==================== -->
       <section id="section-property" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">PROPERTY INTELLIGENCE</div><h1 class="page-title">Understand the property</h1><div class="page-description">Explore parcel boundaries, planning context and available hazard layers. Government data availability varies by location; review source notes before relying on a layer.</div></div></div>
+        <div id="prop-tabs-intel" class="prop-tabs" aria-label="Investment properties"></div>
         <div class="section">
           <h2>Property map</h2>
-          <div class="hint">Live Queensland open data for the selected address — the parcel itself, its planning context and the hazard overlays that matter for insurance and resale. Pick the address from the dropdown in Inputs (or type the full address) first.</div>
+          <div class="hint">Live government spatial data for the selected address. Available parcel, planning and hazard layers depend on the state. Type the address in Inputs — it auto-picks as you type.</div>
           <div class="prop-map-wrap">
             <div id="property-map"></div>
             <div class="prop-map-controls">
@@ -494,19 +556,38 @@
 
         <div class="section">
           <h2>What the government data says</h2>
-          <div class="hint">Straight from Queensland Government spatial services. Where a layer can't answer for this address it says so rather than guessing.</div>
+          <div class="hint">Government and open-data attributes for this address. Missing information is left blank rather than estimated.</div>
           <div id="property-cards" class="cards"></div>
+          <div id="valuation-guide"></div>
           <div id="property-details" class="kv-grid"></div>
           <div id="property-sources" class="source-note"></div>
+          <div id="listing-check-row" style="margin-top:12px">
+            <button id="btn-listing-check">Listing check (AI)</button>
+            <span id="listing-check-hint" class="source-note"></span>
+          </div>
+          <div id="listing-check-box" class="hidden" style="margin-top:10px"></div>
+        </div>
+
+        <div class="section">
+          <h2>Documents</h2>
+          <div class="hint">Due-diligence documents for this property — plans, appraisals, market reports. Clients you share this property with can open them from their link.</div>
+          <div class="portal-actions">
+            <input type="file" id="doc-file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp" hidden>
+            <button id="doc-add" class="btn-ghost">+ Upload documents</button>
+            <span id="doc-msg" class="source-note"></span>
+          </div>
+          <div id="doc-list" class="doc-list"></div>
         </div>
       </section>
 
       <!-- ==================== AREA REPORT ==================== -->
       <section id="section-area" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">MARKET INTELLIGENCE</div><h1 class="page-title">Area &amp; suburb research</h1><div class="page-description">Assess the selected suburb using available reference data, investment-score factors, comparable sales, rental evidence and due-diligence prompts.</div></div></div>
         <div class="section">
           <h2>Suburb snapshot</h2>
           <div class="hint">Reference data for the suburb you selected in Inputs. Sources and as-of dates shown under each stat.</div>
           <div id="area-cards" class="cards"></div>
+          <div id="area-trend"></div>
           <div id="area-links" class="source-note"></div>
         </div>
 
@@ -530,7 +611,8 @@
               <span id="comp-search-msg" class="source-note"></span></div>
           </div>
           <div class="grid-form" id="comp-form">
-            <div class="field"><label>Address</label><input type="text" autocomplete="off" id="comp-address"></div>
+            <div class="field addr-field"><label>Address</label><input type="text" autocomplete="off" id="comp-address">
+              <div id="comp-addr-dropdown" class="addr-dropdown hidden"></div></div>
             <div class="field"><label>Sold price <span class="unit">$</span></label><input type="number" id="comp-price"></div>
             <div class="field"><label>Sold date</label><input type="text" autocomplete="off" id="comp-date" placeholder="2026-08"></div>
             <div class="field"><label>Beds</label><input type="number" id="comp-beds"></div>
@@ -545,9 +627,19 @@
 
         <div class="section">
           <h2>Comparable rentals</h2>
-          <div class="hint">Manually captured rental evidence near the property — paste from a listing and compare against your rent assumption.</div>
+          <div class="hint">Rental evidence near the property — search nearby listings with AI, or paste from a listing below, and compare against your rent assumption.</div>
+          <div id="rental-search-row" style="margin-top:10px">
+            <button id="btn-find-rentals">Find rental evidence (AI)</button>
+            <span id="rental-search-hint" class="source-note"></span>
+          </div>
+          <div id="rental-search-results" class="hidden" style="margin-top:10px">
+            <div class="table-wrap"><table id="rental-search-table"></table></div>
+            <div style="margin-top:10px"><button id="btn-save-rentals" class="primary">Save selected</button>
+              <span id="rental-search-msg" class="source-note"></span></div>
+          </div>
           <div class="grid-form" id="rental-form">
-            <div class="field"><label>Address</label><input type="text" autocomplete="off" id="rental-address"></div>
+            <div class="field addr-field"><label>Address</label><input type="text" autocomplete="off" id="rental-address">
+              <div id="rental-addr-dropdown" class="addr-dropdown hidden"></div></div>
             <div class="field"><label>Rent <span class="unit">$/wk</span></label><input type="number" id="rental-rent"></div>
             <div class="field"><label>Beds</label><input type="number" id="rental-beds"></div>
             <div class="field"><label>Type</label>
@@ -581,10 +673,24 @@
               <div class="field"><label>Source</label><input type="text" autocomplete="off" id="rate-source"></div>
             </div>
             <div style="margin-top:10px"><button id="btn-add-rate">Add rate</button></div>
+            <div id="rates-ai-row" style="margin-top:10px">
+              <button id="btn-rates-ai">Suggest current rates (AI)</button>
+              <span id="rates-ai-hint" class="source-note"></span>
+            </div>
+            <div id="rates-ai-box" class="hidden" style="margin-top:10px">
+              <div class="table-wrap"><table id="rates-ai-table"></table></div>
+              <div style="margin-top:10px"><button id="btn-save-rates-ai" class="primary">Save selected</button>
+                <span id="rates-ai-msg" class="source-note"></span></div>
+            </div>
           </details>
           <details class="advanced">
             <summary>Suburb data</summary>
             <div class="table-wrap"><table id="suburb-table"></table></div>
+            <div id="suburb-ai-row" style="margin-top:10px">
+              <select id="suburb-ai-select" style="margin-right:8px"></select>
+              <button id="btn-suburb-ai">AI research this suburb</button>
+              <span id="suburb-ai-hint" class="source-note" style="margin-left:8px"></span>
+            </div>
             <div class="grid-form" style="margin-top:10px">
               <div class="field"><label>Suburb</label><input type="text" autocomplete="off" id="sub-name"></div>
               <div class="field"><label>Postcode</label><input type="text" autocomplete="off" id="sub-postcode"></div>
@@ -598,12 +704,26 @@
         </div>
       </section>
 
+      <!-- ==================== DEAL CHECK ==================== -->
+      <section id="section-dealcheck" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">DEAL CHECK</div><h1 class="page-title">Deal check</h1><div class="page-description">Three lenses, one verdict: the area scored against every SA2 in Australia (2021 Census), your deal numbers scored against the linked suburb, and local evidence — comparables, days on market and the ABS price series.</div></div></div>
+        <div class="section" style="margin-bottom:0">
+          <button id="btn-dc-suburb-ai">AI suburb evidence</button>
+          <button id="btn-dc-signals" style="margin-left:8px">Area signals (AI)</button>
+          <span id="dc-ai-hint" class="source-note" style="margin-left:8px"></span>
+          <div id="dc-signals-box" class="hidden" style="margin-top:10px"></div>
+        </div>
+        <div class="section" id="dc-body"></div>
+      </section>
+
       <!-- ==================== CASH FLOW ==================== -->
       <section id="section-cashflow" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">FINANCIAL ANALYTICS</div><h1 class="page-title">Cash flow analysis</h1><div class="page-description">Review annual operating costs and portfolio cash flow, with the selected property and year controlling the detail below.</div></div></div>
         <div class="section">
           <h2>Year detail <select id="cf-prop" style="margin-left:8px"></select> <select id="cf-year" style="margin-left:8px"></select></h2>
           <div class="hint" id="cf-subtitle"></div>
-          <div class="table-wrap"><table id="cf-table"></table></div>
+<div class="analytics-insight" id="cf-insight"></div>
+                  <div class="table-wrap"><table id="cf-table"></table></div>
           <div class="source-note">Per-property views allocate portfolio-level tax and land tax pro-rata — the Portfolio view shows the true assessed totals.</div>
         </div>
 
@@ -622,10 +742,12 @@
 
       <!-- ==================== PROJECTIONS ==================== -->
       <section id="section-projections" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">FINANCIAL ANALYTICS</div><h1 class="page-title">Long-term projections</h1><div class="page-description">Track projected property value, debt, equity, rental income and expenses across the selected holding period.</div></div></div>
         <div class="section">
           <h2>Year-by-year projection <select id="proj-prop" style="margin-left:8px"></select></h2>
           <div class="hint">Highlighted row = interest-only period ends and P&amp;I repayments begin.</div>
-          <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table id="proj-table"></table></div>
+<div class="analytics-insight" id="proj-insight"></div>
+                  <div class="table-wrap" style="max-height:420px;overflow-y:auto"><table id="proj-table"></table></div>
         </div>
         <div class="chart-row">
           <div class="section">
@@ -641,10 +763,12 @@
 
       <!-- ==================== EXIT / CGT ==================== -->
       <section id="section-exit" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">FINANCIAL ANALYTICS</div><h1 class="page-title">Exit strategy &amp; capital gains</h1><div class="page-description">Review estimated sale proceeds, selling costs, cost base and the capital gains tax working for the selected property.</div></div></div>
         <div class="section">
           <h2>Sale <select id="exit-prop" style="margin-left:8px"></select></h2>
           <div id="exit-cards" class="cards"></div>
-        </div>
+<div class="analytics-insight" id="exit-insight"></div>
+                </div>
 
         <div class="section">
           <h2>Sale waterfall</h2>
@@ -660,6 +784,7 @@
 
       <!-- ==================== BORROWING ==================== -->
       <section id="section-borrowing" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">FINANCIAL ANALYTICS</div><h1 class="page-title">Borrowing capacity</h1><div class="page-description">Explore indicative serviceability using your household income, expenses, debts, rental shading and assessment buffer.</div></div></div>
         <div class="section">
           <h2>Your serviceability inputs</h2>
           <div class="hint">Bank-style assessment: all loans assessed as P&amp;I at rate + buffer, rent shaded.</div>
@@ -683,7 +808,8 @@
           </div>
         </div>
         <div id="borrowing-cards" class="cards"></div>
-        <div class="section">
+<div class="analytics-insight" id="borrowing-insight"></div>
+                <div class="section">
           <h2>Rate sensitivity</h2>
           <div class="hint">Max additional borrowing as interest rates move (buffer always applied on top).</div>
           <div class="chart-box"><canvas id="chart-bc-sens"></canvas></div>
@@ -692,9 +818,14 @@
 
       <!-- ==================== SCENARIOS ==================== -->
       <section id="section-scenarios" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">PORTFOLIO DECISIONS</div><h1 class="page-title">Scenarios &amp; comparisons</h1><div class="page-description">Review saved investment cases side by side and compare the financial outcomes using consistent assumptions.</div></div></div>
         <div class="section">
           <h2>Saved scenarios</h2>
-          <div class="table-wrap"><table id="scn-table"></table></div>
+          <div class="hint">Everything below is yours — scenarios, comparables, actuals and suburbs. Take a JSON backup any time.</div>
+          <div class="portal-actions">
+            <div class="table-wrap"><table id="scn-table"></table></div>
+            <button id="btn-export-data" class="btn-ghost">Export all data (JSON)</button>
+          </div>
         </div>
         <div class="section">
           <h2>Compare (tick up to 3)</h2>
@@ -718,6 +849,7 @@
 
       <!-- ==================== ACTUALS (portfolio tracking) =========== -->
       <section id="section-actuals" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">PORTFOLIO TRACKING</div><h1 class="page-title">Actual performance</h1><div class="page-description">Record real rental and expense outcomes, then compare actual results with the scenario projection.</div></div></div>
         <div class="section">
           <h2>Record actuals</h2>
           <div class="hint" id="actuals-hint">What actually happened each period. Saving the same period + property again updates it.</div>
@@ -736,13 +868,16 @@
 
         <div class="section">
           <h2>Actual vs projected</h2>
-          <div class="hint">Projected figures come from the engine at each period's calendar year. Empty optional fields don't show a variance.</div>
+          <div class="hint" id="actuals-hint">What actually happened each period, compared against the engine's projection for the same calendar year.</div>
+          <div class="cards" id="act-compare"></div>
+          <div class="chart-box"><canvas id="act-chart"></canvas></div>
           <div class="table-wrap"><table id="actuals-table"></table></div>
         </div>
       </section>
 
       <!-- ==================== BA WORKSPACE (buyer's agents only) ==== -->
       <section id="section-workspace" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">BUYER'S AGENT WORKSPACE</div><h1 class="page-title">Client workspace</h1><div class="page-description">Manage your brand, clients and shared property proposals from one place. Client access and proposal permissions remain unchanged.</div></div></div>
         <div class="section">
           <h2>Branding &amp; plan</h2>
           <div class="hint">Branding shows on every client portal you share. Trial holds 3 active proposals; Pro is unlimited.</div>
@@ -750,6 +885,10 @@
             <div class="field"><label>Business name</label><input type="text" autocomplete="off" id="ws-brand-name" maxlength="80" placeholder="Smith Property Buyers"></div>
             <div class="field"><label>Accent colour</label><input type="color" id="ws-brand-color" value="#6366f1"></div>
             <div class="field"><label>Tagline <span class="unit">optional</span></label><input type="text" autocomplete="off" id="ws-brand-tagline" maxlength="140" placeholder="Independent advice, data first"></div>
+            <div class="field"><label>Phone <span class="unit">reports</span></label><input type="text" autocomplete="off" id="ws-brand-phone" maxlength="30" placeholder="0400 000 000"></div>
+            <div class="field"><label>Email <span class="unit">reports</span></label><input type="email" autocomplete="off" id="ws-brand-email" maxlength="80" placeholder="you@youragency.com.au"></div>
+            <div class="field"><label>Website <span class="unit">reports</span></label><input type="text" autocomplete="off" id="ws-brand-website" maxlength="120" placeholder="youragency.com.au"></div>
+            <div class="field"><label>Office address <span class="unit">reports</span></label><input type="text" autocomplete="off" id="ws-brand-office" maxlength="140" placeholder="Suite 4, 100 Main St, Brisbane QLD"></div>
             <div class="field"><label>Logo <span class="unit">PNG/JPG ≤ 1 MB</span></label>
               <input type="file" id="ws-brand-logo" accept="image/png,image/jpeg"></div>
             <div class="field"><label>&nbsp;</label><button id="ws-save-branding" class="primary">Save branding</button></div>
@@ -760,6 +899,7 @@
             <span id="ws-logo-msg" class="source-note"></span>
             <button id="ws-upgrade" class="btn-ghost">Upgrade to Pro</button>
             <span id="ws-plan-msg" class="source-note"></span>
+            <label class="check-field"><input type="checkbox" id="ws-alerts"> Email me client activity</label>
           </div>
         </div>
 
@@ -798,8 +938,38 @@
         </div>
 
         <div class="section">
+          <h2>Share a client portfolio</h2>
+          <div class="hint">Tick several properties for one client and share them behind a single link — the client sees every property and a decision roll-up. Each property keeps its own comments, approvals and PDF.</div>
+          <div class="grid-form" id="ws-pf-form">
+            <div class="field"><label>Client</label><select id="ws-pf-client"></select></div>
+            <div class="field"><label>Portfolio title <span class="unit">optional</span></label><input type="text" autocomplete="off" id="ws-pf-title" placeholder="e.g. Sam's shortlist — November"></div>
+            <div class="field"><label>Link expires <span class="unit">days, 0 = never</span></label><input type="number" id="ws-pf-expiry" value="30"></div>
+          </div>
+          <div class="field"><label>Properties to include</label><div id="ws-pf-items" class="ws-pf-items"></div></div>
+          <div class="portal-actions">
+            <button id="ws-pf-create" class="primary">Create portfolio link</button>
+            <span id="ws-pf-count" class="source-note"></span>
+          </div>
+          <div id="ws-pf-new-link" class="hidden">
+            <div class="field"><label>Portfolio link (copied to clipboard, shown once)</label>
+              <input type="text" autocomplete="off" id="ws-pf-link" readonly></div>
+            <div class="portal-actions">
+              <input type="email" id="ws-pf-email" placeholder="client email">
+              <button id="ws-pf-email-send" class="btn-ghost">Email link</button>
+              <span id="ws-pf-email-msg" class="source-note"></span>
+            </div>
+            <div class="source-note">Anyone with this link sees every property in the portfolio as this client — send it to them privately.</div>
+          </div>
+        </div>
+
+        <div class="section">
           <h2>All shared properties</h2>
           <div class="table-wrap"><table id="ws-presentations"></table></div>
+        </div>
+
+        <div class="section">
+          <h2>Client portfolios</h2>
+          <div class="table-wrap"><table id="ws-portfolios"></table></div>
         </div>
 
         <div class="section hidden" id="ws-activity-box">
@@ -807,15 +977,197 @@
           <div id="ws-events" class="kv"></div>
         </div>
       </section>
+
+      <!-- ==================== PORTFOLIO ==================== -->
+      <section id="section-portfolio" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">MY PORTFOLIO</div><h1 class="page-title">Where you stand</h1><div class="page-description">Everything you own, owe and could borrow against — aggregated across your purchased properties, with the next 15 years projected.</div></div></div>
+        <div class="pfo-whatif-row">
+          <label class="pfo-whatif" title="Include considering and under-offer properties in the totals above as if they completed">
+            <input type="checkbox" id="pfo-whatif"><span class="pfo-whatif-switch" aria-hidden="true"></span>
+            <span>What-if: include prospective properties in the totals</span>
+          </label>
+        </div>
+        <div class="section">
+          <div class="cards" id="pfo-stats"></div>
+        </div>
+        <div class="section">
+          <h2>Net worth — now and the next 15 years</h2>
+          <div class="hint" id="pfo-chart-hint">Today's position, then every purchased property projected together.</div>
+          <div class="chart-box"><canvas id="pfo-chart"></canvas></div>
+        </div>
+        <div class="section">
+          <h2>Own &amp; owe</h2>
+          <div class="hint" id="pfo-table-hint">Year-one figures for each purchased property, from its saved scenario.</div>
+          <div class="table-wrap"><table id="pfo-table"></table></div>
+        </div>
+        <div class="section">
+          <h2>Pipeline</h2>
+          <div class="hint">Move a property through considering → under offer → purchased. Purchased properties join the totals above.</div>
+          <div id="pfo-pipeline" class="pfo-pipeline"></div>
+        </div>
+        <div class="section">
+          <h2>Suburb side-by-side</h2>
+          <div class="hint">Tick two or three of your saved suburbs to compare them. Save suburbs on this page first.</div>
+          <div id="sb-picker" class="chip-row"></div>
+          <div class="table-wrap"><table id="sb-table"></table></div>
+        </div>
+      </section>
+
+      <!-- ==================== LOCATION IQ ==================== -->
+      <section id="section-location" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">LOCATION IQ</div><h1 class="page-title">Map search</h1><div class="page-description">Hazards, planning zones, boundaries and infrastructure from government open data — layers toggle on the map. Victorian and Queensland layers are live; more states as their feeds are verified.</div></div></div>
+        <div class="lq-wrap">
+          <div class="lq-side">
+            <div class="field"><label>Search address, suburb or postcode</label>
+              <input type="text" id="lq-search" autocomplete="off" placeholder="e.g. 50 Oldmill Drive, Beaconsfield">
+              <div id="lq-suggest" class="addr-dropdown"></div>
+            </div>
+            <div class="field"><label>Map style</label>
+              <select id="lq-basemap">
+                <option value="standard">Standard</option>
+                <option value="satellite">Satellite</option>
+                <option value="hybrid">Hybrid</option>
+              </select></div>
+            <div id="lq-layers"></div>
+            <div class="source-note">Layers: VIC open data (WMS), QLD Globe (ArcGIS), ABS 2021 Census (SA2).</div>
+          </div>
+          <div class="lq-map"><div id="lq-map"></div></div>
+        </div>
+      </section>
+
+      <!-- ==================== HEAT MAPS ==================== -->
+      <section id="section-heatmaps" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">HEAT MAPS</div><h1 class="page-title">Every community, at a glance</h1><div class="page-description">2021 Census by SA2, Australia-wide — tenure, stress, work, age and demand signals. Pick a metric, pan anywhere.</div></div></div>
+        <div class="section">
+          <div id="hm-groups"></div>
+          <div id="hm-address-row" style="margin-top:10px">
+            <div class="field addr-field" style="max-width:420px"><label>Find an address <span class="unit">pans the map</span></label>
+              <input type="text" autocomplete="off" id="hm-address-input" placeholder="Type an address, suburb or postcode">
+              <div id="hm-addr-dropdown" class="addr-dropdown hidden"></div>
+              <div class="addr-matched hidden" id="hm-address-matched"></div>
+            </div>
+          </div>
+          <div style="margin-top:10px"><label class="lq-layer" style="display:inline-flex;align-items:center;gap:6px"><input type="checkbox" id="hm-labels"> <span>Show values on the map</span></label></div>
+        </div>
+        <div class="section">
+          <div style="height:520px;border-radius:.8rem;overflow:hidden;border:1px solid var(--bd)"><div id="hm-map" style="height:100%"></div></div>
+          <div id="hm-legend" class="lq-legend" style="margin-top:8px"></div>
+          <div class="source-note" id="hm-caption">2021 Census (SA2 level) &copy; Australian Bureau of Statistics via ArcGIS — free and open. Values load for the visible map area; the colour ramp runs light → dark within what's on screen.</div>
+        </div>
+      </section>
+
+      <!-- ==================== MARKETS ==================== -->
+      <section id="section-markets" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">MARKETS</div><h1 class="page-title">Australia by state</h1><div class="page-description">Macro indicators from ABS releases. State rankings update per metric.</div></div></div>
+        <div class="section">
+          <div style="margin-bottom:10px">
+            <button id="btn-mk-ai">Refresh with AI</button>
+            <span id="mk-ai-hint" class="source-note"></span>
+          </div>
+          <div class="cards" id="mk-cards"></div>
+        </div>
+        <div class="section">
+          <h2>Median price history
+            <select id="mk-price-state" style="margin-left:8px"></select>
+            <select id="mk-price-kind" style="margin-left:8px">
+              <option value="houses">Houses</option>
+              <option value="units">Units</option>
+            </select></h2>
+          <div class="hint">Quarterly median price, capital city vs rest of state — ABS Total Value of Dwellings, Table 2.</div>
+          <div class="chart-box"><canvas id="chart-mk-prices"></canvas></div>
+          <div class="source-note" id="mk-price-src"></div>
+        </div>
+        <div class="section">
+          <h2>States</h2>
+          <div id="mk-tabs" class="chip-row"></div>
+          <div id="mk-states" class="mk-states"></div>
+          <div id="mk-capitals" class="mk-capitals"></div>
+        </div>
+      </section>
+
+      <!-- ==================== TOOLS ==================== -->
+      <section id="section-tools" class="section-page">
+        <div class="page-intro"><div class="page-intro-copy"><div class="page-eyebrow">PROPERTY TOOLS</div><h1 class="page-title">Quick calculators</h1><div class="page-description">Stand-alone versions of the modelling you use inside the analyser — no scenario needed.</div></div></div>
+        <div class="section">
+          <h2>Rental yield</h2>
+          <div class="grid-form">
+            <div class="field"><label>Price <span class="unit">$</span></label><input type="number" id="t-yield-price"></div>
+            <div class="field"><label>Weekly rent <span class="unit">$</span></label><input type="number" id="t-yield-rent"></div>
+          </div>
+          <div class="source-note" id="t-yield-out"></div>
+        </div>
+        <div class="section">
+          <h2>Mortgage repayments</h2>
+          <div class="grid-form">
+            <div class="field"><label>Loan amount <span class="unit">$</span></label><input type="number" id="t-rep-loan"></div>
+            <div class="field"><label>Interest rate <span class="unit">%</span></label><input type="number" id="t-rep-rate" step="0.01"></div>
+            <div class="field"><label>Term <span class="unit">years</span></label><input type="number" id="t-rep-term" value="30"></div>
+            <div class="field"><label>Repayment type</label><select id="t-rep-type"><option value="principal_and_interest">P&amp;I</option><option value="interest_only">Interest only</option></select></div>
+          </div>
+          <div class="source-note" id="t-rep-out"></div>
+        </div>
+        <div class="section">
+          <h2>Upfront cash to buy</h2>
+          <div class="grid-form">
+            <div class="field"><label>State</label><select id="t-cash-state"><option>QLD</option><option>NSW</option><option>VIC</option><option>SA</option><option>WA</option><option>TAS</option><option>NT</option><option>ACT</option></select></div>
+            <div class="field"><label>Price <span class="unit">$</span></label><input type="number" id="t-cash-price"></div>
+            <div class="field"><label>Deposit LVR <span class="unit">%</span></label><input type="number" id="t-cash-lvr" value="80"></div>
+          </div>
+          <div class="source-note" id="t-cash-out"></div>
+        </div>
+        <div class="section">
+          <h2>Usable equity</h2>
+          <div class="grid-form">
+            <div class="field"><label>Property value <span class="unit">$</span></label><input type="number" id="t-eq-value"></div>
+            <div class="field"><label>Loan balance <span class="unit">$</span></label><input type="number" id="t-eq-loan"></div>
+          </div>
+          <div class="source-note" id="t-eq-out"></div>
+        </div>
+        <div class="section">
+          <h2>Borrowing power</h2>
+          <div class="grid-form">
+            <div class="field"><label>Household income <span class="unit">$</span></label><input type="number" id="t-bor-income"></div>
+            <div class="field"><label>Interest rate <span class="unit">%</span></label><input type="number" id="t-bor-rate" step="0.01" value="6.5"></div>
+            <div class="field"><label>Other debts <span class="unit">$ / yr</span></label><input type="number" id="t-bor-debts" value="0"></div>
+          </div>
+          <div class="source-note" id="t-bor-out"></div>
+        </div>
+      </section>
     </main>
 
     <footer class="app-foot">
-      AUD &middot; estimates only, not financial or tax advice &middot; rates: QRO &amp; ATO (Nov 2026)
-      &middot; property data: Queensland Government open data
+      <span>AUD &middot; estimates only, not financial or tax advice &middot; rates: QRO &amp; ATO (Nov 2026) &middot; property data: Queensland Government open data</span>
+      <span class="app-foot-credit">© 2026 Property Analyser <span aria-hidden="true">·</span> Developed by <strong>RV Enterprise</strong></span>
     </footer>
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <div id="command-palette" class="command-palette hidden" role="dialog" aria-modal="true" aria-label="Search and quick actions">
+    <div class="command-panel">
+      <div class="command-search"><span>⌕</span><input id="command-search-input" type="search" autocomplete="off" placeholder="Search pages, properties and scenarios…"><kbd>ESC</kbd></div>
+      <div class="command-results" id="command-results"></div>
+      <div class="command-footer"><span>↑ ↓ to navigate</span><span><kbd>↵</kbd> to open</span><span><kbd>⌘ K</kbd> quick search</span></div>
+    </div>
+  </div>
+
+  <div id="report-dialog" class="report-dialog hidden" role="dialog" aria-modal="true" aria-label="Choose report sections">
+    <div class="report-dialog-panel">
+      <div class="report-dialog-head">
+        <div><div class="dash-eyebrow">CLIENT REPORT</div><h2>Choose report sections</h2></div>
+        <button id="report-dialog-x" class="icon-btn" title="Close">&times;</button>
+      </div>
+      <div class="hint">Tick the sections to include in the PDF. Sections with no data are skipped automatically.</div>
+      <div id="report-dialog-groups"></div>
+      <div class="report-dialog-actions">
+        <button id="report-dialog-select-all" class="secondary">Select all</button>
+        <span class="spacer"></span>
+        <button id="report-dialog-cancel" class="secondary">Cancel</button>
+        <button id="report-dialog-excel" class="secondary">Download Excel</button>
+        <button id="report-dialog-download" class="primary">Download PDF</button>
+      </div>
+    </div>
+  </div>
 
   <!-- First-run coach marks -->
   <div id="tour" class="tour hidden" data-step="0">
@@ -843,9 +1195,46 @@
         <input type="password" id="auth-password" autocomplete="current-password"></div>
       <div class="field check-field"><label for="auth-ba">Buyer's agent account (Workspace + client sharing)</label>
         <input type="checkbox" id="auth-ba"></div>
+      <div class="grid-form" id="auth-onboarding">
+        <div class="field"><label>What's your goal?</label>
+          <select id="auth-goal">
+            <option value="">— optional —</option>
+            <option>Buy my first home</option>
+            <option>Upgrade my PPOR</option>
+            <option>Buy an investment</option>
+            <option>Grow my portfolio</option>
+            <option>Learn for now</option>
+          </select></div>
+        <div class="field"><label>Properties owned today</label>
+          <select id="auth-owned">
+            <option value="">— optional —</option>
+            <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option><option value="5+">5+</option>
+          </select></div>
+      </div>
       <div class="login-actions">
         <button id="btn-login" class="primary">Sign in</button>
         <button id="btn-register">Create account</button>
+        <button id="link-forgot" class="btn-ghost">Forgot password?</button>
+      </div>
+      <div id="auth-forgot-box" class="hidden" style="margin-top:12px">
+        <div class="hint">Enter your account email — we'll send a reset link (valid 30 minutes).</div>
+        <div class="field"><label>Email</label>
+          <input type="email" id="auth-forgot-email" autocomplete="email"></div>
+        <div class="login-actions">
+          <button id="btn-forgot-send" class="primary">Send reset link</button>
+          <button id="btn-forgot-cancel" class="btn-ghost">Back to sign in</button>
+        </div>
+        <div id="forgot-msg" class="source-note"></div>
+      </div>
+      <div id="auth-reset-box" class="hidden" style="margin-top:12px">
+        <div class="hint">Choose a new password for your account.</div>
+        <div class="field"><label>New password <span class="unit">min 8 chars</span></label>
+          <input type="password" id="auth-new-password" autocomplete="new-password"></div>
+        <div class="login-actions">
+          <button id="btn-reset-confirm" class="primary">Set password</button>
+        </div>
+        <div id="reset-msg" class="source-note"></div>
       </div>
       <div id="auth-error" class="auth-error hidden"></div>
     </div>

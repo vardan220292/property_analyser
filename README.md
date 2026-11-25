@@ -127,4 +127,50 @@ warning — confirm with a registered tax adviser.
 - `static/app.js` — SPA wiring, charts, scenario UI, login session
 - `tests/test_engine.js` — known-answer suite (`node tests/test_engine.js`)
 
+## AI research features (UltimateAI gateway)
+
+When `PA_ULTIMATEAI_API_KEY` is set in `.env`, the app gains live
+web-research features powered by an OpenAI-compatible gateway
+(server-side web search):
+
+- **Find sold comps / rental evidence** (Area & suburb research) — two
+  parallel source shards, merged + source-stamped; results stream live
+  into the UI as the research runs.
+- **AI suburb evidence** (Deal Check / Reference data) — median price,
+  rents, vacancy, days on market persisted into the suburb record with
+  provenance; feeds the area report, Deal Check, portal and PDF.
+- **Listing check** (Property intelligence) — is the subject on market,
+  asking price, agent, last sale.
+- **Area signals** (Deal Check) — infrastructure/planning projects within
+  ~5 km.
+- **Markets refresh** — live ABS national indicators when the direct SDMX
+  feed is unreachable.
+- **Bank rate suggestions** — current investor variable rates from
+  comparison sites, saved into the rates table.
+
+Endpoints: `POST /api/comps/search/stream`, `POST /api/rentals/search/stream`,
+`POST /api/suburbs/ai-evidence[/stream]`,
+`POST /api/property/listing-check[/stream]`,
+`POST /api/property/area-signals[/stream]`,
+`POST /api/markets/ai-refresh[/stream]`,
+`POST /api/bank-rates/suggest[/stream]`, `GET /api/ai/status`.
+Stream routes emit SSE progress frames then a `done` frame; each holds one
+worker for the session duration, so run gunicorn with
+`--worker-class gthread` in production.
+
+Env vars: `PA_ULTIMATEAI_API_KEY` (enables everything above; unset = the AI
+buttons explain themselves), `PA_COMPS_MODEL` (default `gpt-5.6-sol`),
+`PA_RESEARCH_EFFORT` (default `low`).
+
+Government data coverage is all-states: parcels, zoning and hazards via
+[Open Land Fabric](https://openlandfabric.org) (free, keyless, national —
+`olf.py`) with each state's own open services as fallbacks
+(`state_intel.py`), national census benchmarks, and a sold-price series for
+VIC with a suburb-record median fallback elsewhere. A background job
+re-fetches this intelligence daily at 03:00 for every saved address
+(`PA_NO_SCHEDULER=1` disables). Clients see the BA's branding — logo, accent colour
+and contact details — on the portal and in the branded PDF header/footer.
+
+Estimates only — not tax or financial advice.
+
 Estimates only — not tax or financial advice.

@@ -234,6 +234,7 @@
     label: '',                    // UI shows "Investment property N" when blank
     address: '',
     addressMeta: null,    // {domainId, unit, street, suburb, postcode, state} from a Domain autocomplete pick
+    ownershipStatus: 'considering',  // considering | under_offer | purchased — only 'purchased' counts in portfolio roll-ups
     bedrooms: 3,          // used by the rentVsMedian score factor
     purchaseYear: 2026,
     saleYear: 20,
@@ -1178,6 +1179,33 @@
     return -taxablePropertyResult * ownerBlendedRate(inputs, year - 1);
   }
 
+  // The PIA-style investor/partner breakdown: each owner's share of the
+  // property result taxed at their OWN marginal rate. Sums exactly to
+  // taxOnPropertyResult (the blended rate is the share-weighted average).
+  function ownerTaxSplit(inputs, taxablePropertyResult, year) {
+    const y = Math.max(0, num(year, 1) - 1);
+    const growth = Math.pow(1 + num(inputs.otherTaxableIncomeGrowthRate, 0), y);
+    const joint = inputs.ownershipType === 'joint_50_50';
+    const share = joint ? 0.5 : 1;
+    const s1 = marginalRate(inputs.owner1TaxableIncome * growth, inputs.taxYear);
+    const owner1 = -taxablePropertyResult * share * s1.combinedMarginalRate;
+    let owner2 = null;
+    let s2 = null;
+    if (joint) {
+      s2 = marginalRate(inputs.owner2TaxableIncome * growth, inputs.taxYear);
+      owner2 = -taxablePropertyResult * share * s2.combinedMarginalRate;
+    }
+    return {
+      ownership: joint ? 'joint_50_50' : 'sole',
+      share,
+      owner1, owner2,
+      total: owner2 === null ? owner1 : owner1 + owner2,
+      rate1: s1.combinedMarginalRate, rate2: s2 ? s2.combinedMarginalRate : null,
+      bracket1: s1.bracketLabel, bracket2: s2 ? s2.bracketLabel : null,
+      income1: inputs.owner1TaxableIncome, income2: inputs.owner2TaxableIncome,
+    };
+  }
+
   // Single-property year: land tax on this property + other AU land,
   // equity loan scheduled in full, tax at the blended marginal rate.
   // Byte-compatible with the pre-portfolio math.
@@ -1947,7 +1975,7 @@
       netYield,
       year1PreTaxCashFlow: y1.preTaxCashFlow,
       year1AfterTaxCashFlow: y1.afterTaxCashFlow,
-      weeklyOutOfPocket: -y1.afterTaxCashFlow / 52, // negative number = cost
+      weeklyOutOfPocket: -y1.afterTaxCashFlow / 52, // positive = you pay; negative = surplus
       year1TaxRefund: y1.taxRefundOrCost,
       cashOnCashReturn: cashOnCash,
       tenYearEquity: tenYear.netEquity,
@@ -2191,6 +2219,7 @@
     const properties = props.map((p, i) => ({
       index: i,
       label: p.label,
+      ownershipStatus: p.ownershipStatus,
       upfront: upfronts[i],
       rows: projection.perProperty[i].rows,
       totals: projection.perProperty[i].totals,
@@ -2243,11 +2272,352 @@
     });
   }
 
+  // Inputs reduced to purchased properties only — the portfolio roll-ups
+  // (dashboard totals, mix chart, projections, exit) compute on this view.
+  // null when nothing is purchased: callers must show an empty state rather
+  // than let calculateAll pad a phantom default property (engine.js normalize).
+  function ownedInputs(rawInputs) {
+    const inputs = normalizeInputs(rawInputs);
+    const owned = inputs.properties.filter((p) => p.ownershipStatus === 'purchased');
+    if (!owned.length) return null;
+    const out = JSON.parse(JSON.stringify(inputs));
+    out.properties = owned;
+    return out;
+  }
+
   // Buyer due-diligence prompts derived from inputs + suburb data.
   // status: 'ok' | 'warn' | 'unknown' — unknowns are things the app has
   // no data for and MUST be verified manually before purchase.
-  function riskChecklist(rawInputs, suburb) {
+  // Deal-level verdicts (Deal Check page phase 2): the property's own
+  // numbers scored against the linked suburb row — price, yield, cash flow,
+  // vacancy, rent positioning, growth. Pure; census verdicts live in the
+  // server's census.py and the page blends both halves. weeklyOutOfPocket is
+  // positive when you are paying. Band scores: linear between [x, score]
+  // points, clamped; 100 is always best for the deal.
+  function bandScore(v, points) {
+    if (!Number.isFinite(v)) return null;
+    if (v <= points[0][0]) return points[0][1];
+    for (let i = 1; i < points.length; i++) {
+      if (v <= points[i][0]) {
+        const x0 = points[i - 1][0], s0 = points[i - 1][1];
+        const x1 = points[i][0], s1 = points[i][1];
+        return x1 > x0 ? s0 + (s1 - s0) * (v - x0) / (x1 - x0) : s1;
+      }
+    }
+    return points[points.length - 1][1];
+  }
+
+  function dealStatus(score) {
+    return score >= 65 ? 'strong' : score >= 40 ? 'ok' : 'watch';
+  }
+
+  function rentMedianFor(suburb, bedrooms) {
+    if (!suburb) return null;
+    const b = Number(bedrooms) || 0;
+    const key = b <= 2 ? 'medianRent2Bed' : (b === 3 ? 'medianRent3Bed' : 'medianRent4Bed');
+    const v = Number(suburb[key]);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  }
+
+  function dealVerdicts(rawInputs, metrics, suburb) {
     const inputs = singleView(normalizeInputs(rawInputs));
+    const price = num(inputs.purchasePrice, 0);
+    const rent = num(inputs.weeklyRent, 0);
+    const beds = num(inputs.bedrooms, 0);
+    const out = [];
+    const push = (key, question, headlines, score, chips) => {
+      const s = score == null ? null : Math.round(Math.max(0, Math.min(100, score)));
+      out.push({ key, question, group: 'deal',
+        status: s == null ? 'nodata' : dealStatus(s), score: s,
+        headline: s == null ? headlines.nodata : headlines[dealStatus(s)],
+        metrics: chips.filter(Boolean) });
+    };
+    const chip = (label, value, unit, dp, benchmark, opts) => ({
+      label, value: Number.isFinite(value) ? value : null, unit, dp: dp != null ? dp : 0,
+      benchmark: Number.isFinite(benchmark) ? benchmark : null, percentile: null,
+      better: (opts && opts.better) || null, note: (opts && opts.note) || null,
+    });
+
+    // 1. Price vs the suburb's bedroom-adjusted median. The suburb table
+    // carries one all-dwelling price median, so the per-bedroom figure is a
+    // stated approximation (bedroom-mix factors), not observed data.
+    const medPrice = suburb ? num(suburb.medianPrice, 0) : 0;
+    const BED_MEDIAN_FACTOR = { 1: 0.6, 2: 0.8, 3: 1.0, 4: 1.2, 5: 1.4 };
+    const bedFactor = beds >= 5 ? BED_MEDIAN_FACTOR[5]
+      : (BED_MEDIAN_FACTOR[beds] || 1);
+    const adjMedian = medPrice > 0 ? medPrice * bedFactor : null;
+    const medPriceNote = 'All-dwelling median'
+      + (suburb && suburb.medianPriceSource ? ' · ' + suburb.medianPriceSource : '');
+    const priceRatio = price > 0 && adjMedian > 0 ? price / adjMedian : null;
+    push('price_vs_market', 'Are you paying a fair price for this suburb?', {
+      nodata: 'Link a suburb (or set a located VIC address) to check the price.',
+      strong: 'Priced at or below the suburb median for this size — fair value.',
+      ok: 'Slightly above the suburb median for this size — pay up only for verified quality.',
+      watch: 'Well above the suburb median for this size — be clear what the premium buys.',
+    }, priceRatio == null ? null : bandScore(priceRatio,
+      [[0.7, 100], [0.9, 85], [1.0, 68], [1.1, 50], [1.25, 30], [1.4, 12]]),
+    [chip('Purchase price', price, '$', 0),
+     chip('Suburb median (all dwellings)', medPrice || null, '$', 0, null,
+          { note: medPriceNote }),
+     chip(`Est. median (${beds || '?'}-bed)`, adjMedian, '$', 0, null,
+          { note: '≈ all-dwelling median × bedroom factor — rough guide only' }),
+     priceRatio == null ? null : chip('Price / est. median', priceRatio, '×', 2)]);
+
+    // 2. Gross yield.
+    const grossYield = metrics ? num(metrics.grossYield, NaN) : NaN;
+    const yPct = Number.isFinite(grossYield) ? grossYield * 100 : null;
+    push('gross_yield', 'Does the rent justify the price?', {
+      nodata: 'Enter price and rent to score the yield.',
+      strong: 'Healthy gross yield for the price paid.',
+      ok: 'Middle-of-the-road yield — rent roughly services the price.',
+      watch: 'Thin yield — the rent barely services the price.',
+    }, yPct == null ? null : bandScore(yPct,
+      [[3, 10], [3.8, 40], [4.4, 65], [5.2, 85], [6, 100]]),
+    [chip('Gross yield', yPct, '%', 2, null,
+          { note: 'Rent × 52 ÷ price, before costs' }),
+     chip('Weekly rent', rent, '$', 0)]);
+
+    // 3. Cash flow.
+    const wop = metrics ? num(metrics.weeklyOutOfPocket, NaN) : NaN;
+    push('cash_flow', 'What does it cost you to hold?', {
+      nodata: 'Complete the inputs to score the holding cost.',
+      strong: 'Pays for itself — little or nothing out of pocket.',
+      ok: 'Modest weekly contribution required.',
+      watch: 'Heavy weekly contribution — you, not the tenant, carry it.',
+    }, Number.isFinite(wop) ? bandScore(wop,
+      [[-30, 100], [0, 82], [15, 68], [40, 42], [80, 12], [150, 0]]) : null,
+    [chip('Weekly after-tax position', wop, '$', 0, null,
+          { note: 'Negative = in pocket' }),
+     chip('Year-1 after-tax cash flow',
+          metrics ? num(metrics.year1AfterTaxCashFlow, NaN) : NaN, '$', 0)]);
+
+    // 4. Vacancy.
+    const vacancy = suburb ? num(suburb.vacancyPct, NaN) : NaN;
+    push('vacancy_risk', 'How quickly will it lease?', {
+      nodata: 'Add suburb vacancy data to score lease-up risk.',
+      strong: 'Tight rental market — tenants compete.',
+      ok: 'Normal vacancy — lease-up is routine.',
+      watch: 'Loose market — expect gaps between tenancies.',
+    }, Number.isFinite(vacancy) ? bandScore(vacancy,
+      [[1, 100], [2, 75], [3.5, 42], [5, 15], [7, 0]]) : null,
+    [chip('Vacancy', vacancy, '%', 1, null,
+          { note: 'Above ~3% landlords compete for tenants' })]);
+
+    // 5. Rent positioning vs the suburb median for this bedroom count.
+    const medRent = rentMedianFor(suburb, beds);
+    const rentRatio = rent > 0 && medRent ? rent / medRent : null;
+    push('rent_positioning', 'Is the rent assumption realistic?', {
+      nodata: 'Add suburb rent data for this bedroom count to check the asking rent.',
+      strong: 'Rent at or below the suburb median — very lettable.',
+      ok: 'Asking slightly above the suburb median — condition must back it.',
+      watch: 'Rent well above the suburb median — the assumption is optimistic.',
+    }, rentRatio == null ? null : bandScore(rentRatio,
+      [[0.85, 95], [1.0, 85], [1.15, 68], [1.3, 42], [1.5, 15]]),
+    [chip('Asking rent', rent, '$', 0),
+     medRent ? chip(`Suburb median rent (${beds <= 2 ? '≤2' : beds}-bed)`, medRent, '$', 0) : null,
+     rentRatio == null ? null : chip('Rent / median', rentRatio, '×', 2)]);
+
+    // 6. Growth outlook.
+    const growth = suburb ? num(suburb.growth5yrPct, NaN) : NaN;
+    push('growth_outlook', 'What is the growth track record?', {
+      nodata: 'Add suburb growth data to score the track record.',
+      strong: 'Suburb prices have grown strongly over five years.',
+      ok: 'Modest historical growth.',
+      watch: 'Flat or falling suburb prices over five years.',
+    }, Number.isFinite(growth) ? bandScore(growth,
+      [[0, 15], [4, 45], [8, 65], [12, 82], [20, 95]]) : null,
+    [chip('5-yr price growth', growth, '%', 1),
+     chip('Population growth', suburb ? num(suburb.populationGrowthPct, NaN) : NaN, '%', 2),
+     chip('Approvals ratio', suburb ? num(suburb.approvalsRatio, NaN) : NaN, '', 2, null,
+          { note: 'Approvals vs stock: <1 undersupply, >1.5 oversupply risk' })]);
+
+    const scored = out.filter((v) => v.score != null).map((v) => v.score);
+    return { verdicts: out,
+      avg: scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length) : null };
+  }
+
+  // Market-evidence verdicts (Deal Check phase 3): what recorded evidence —
+  // saved comparables, days-on-market, the ABS state price series — says
+  // about the deal, as opposed to census fundamentals (census.py) and the
+  // deal's own numbers (dealVerdicts). `evidence` shape:
+  //   { comps: [{soldPrice, beds}], rentals: [{rentWeekly, bedrooms}],
+  //     suburb: {medianDaysOnMarket, growth5yrPct, ...},
+  //     stateGrowth5yr: number|null (percent), stateGrowthLabel: string }
+  function medianOf(vals) {
+    const vs = vals.filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+    if (!vs.length) return null;
+    const mid = Math.floor(vs.length / 2);
+    return vs.length % 2 ? vs[mid] : (vs[mid - 1] + vs[mid]) / 2;
+  }
+
+  function matchedMedian(rows, valueOf, bedsOf, beds) {
+    const same = rows.filter((r) => Number(bedsOf(r)) === beds);
+    const pool = same.length >= 3 ? same : rows;
+    return { median: medianOf(pool.map(valueOf)), n: pool.length,
+             matched: same.length >= 3 };
+  }
+
+  function marketVerdicts(rawInputs, evidence) {
+    const inputs = singleView(normalizeInputs(rawInputs));
+    const price = num(inputs.purchasePrice, 0);
+    const rent = num(inputs.weeklyRent, 0);
+    const beds = num(inputs.bedrooms, 0);
+    const ev = evidence || {};
+    const comps = (ev.comps || []).map((c) => ({
+      price: num(c.soldPrice != null ? c.soldPrice : c.sold_price, NaN),
+      beds: num(c.beds != null ? c.beds : c.bedrooms, NaN),
+    }));
+    const rentals = (ev.rentals || []).map((r) => ({
+      rent: num(r.rentWeekly != null ? r.rentWeekly : r.rent_weekly, NaN),
+      beds: num(r.bedrooms, NaN),
+    }));
+    const suburb = ev.suburb || null;
+    const out = [];
+    const push = (key, question, headlines, score, chips) => {
+      const s = score == null ? null : Math.round(Math.max(0, Math.min(100, score)));
+      out.push({ key, question, group: 'market',
+        status: s == null ? 'nodata' : dealStatus(s), score: s,
+        headline: s == null ? headlines.nodata : headlines[dealStatus(s)],
+        metrics: chips.filter(Boolean) });
+    };
+    const chip = (label, value, unit, dp, opts) => ({
+      label, value: Number.isFinite(value) ? value : null, unit, dp: dp != null ? dp : 0,
+      benchmark: null, percentile: null,
+      better: (opts && opts.better) || null, note: (opts && opts.note) || null,
+    });
+
+    // 1. Sold comparables vs the purchase price.
+    const sold = comps.filter((c) => c.price > 0);
+    if (sold.length >= 3) {
+      const m = matchedMedian(sold, (c) => c.price, (c) => c.beds, beds);
+      const ratio = price > 0 ? price / m.median : null;
+      push('comps_price', 'What do recent local sales support?', {
+        strong: 'Recent sales sit at or above the price you are paying.',
+        ok: 'Price is in line with recent local sales.',
+        watch: 'Paying well above what recent local sales support.',
+      }, ratio == null ? null : bandScore(ratio,
+        [[0.85, 95], [1.0, 80], [1.15, 55], [1.35, 25]]),
+      [chip(`Median of ${m.n} recent sales${m.matched ? ` (${beds}-bed)` : ''}`,
+            m.median, '$', 0, { note: 'Your saved comparables' }),
+       ratio == null ? null : chip('Price / sales median', ratio, '×', 2)]);
+    } else {
+      push('comps_price', 'What do recent local sales support?', {
+        nodata: 'Save at least three sold comparables in Property intelligence.',
+      }, null, []);
+    }
+
+    // 2. Rental comparables vs the assumed rent.
+    const leased = rentals.filter((r) => r.rent > 0);
+    if (leased.length >= 3) {
+      const m = matchedMedian(leased, (r) => r.rent, (r) => r.beds, beds);
+      const ratio = rent > 0 ? rent / m.median : null;
+      push('comps_rent', 'What do nearby rentals actually lease for?', {
+        strong: 'Nearby rentals lease at or above the assumed rent.',
+        ok: 'Assumed rent is in line with nearby lettings.',
+        watch: 'Assumed rent is well above what nearby homes lease for.',
+      }, ratio == null ? null : bandScore(ratio,
+        [[0.9, 92], [1.0, 80], [1.15, 55], [1.35, 20]]),
+      [chip(`Median of ${m.n} nearby lettings${m.matched ? ` (${beds}-bed)` : ''}`,
+            m.median, '$', 0, { note: 'Your saved rental comparables' }),
+       ratio == null ? null : chip('Rent / lettings median', ratio, '×', 2)]);
+    } else {
+      push('comps_rent', 'What do nearby rentals actually lease for?', {
+        nodata: 'Save at least three rental comparables in Property intelligence.',
+      }, null, []);
+    }
+
+    // 3. Days on market.
+    const days = suburb ? num(suburb.medianDaysOnMarket, NaN) : NaN;
+    push('days_on_market', 'How fast does this suburb move?', {
+      nodata: 'Add median days on market to your suburb data.',
+      strong: 'Homes move quickly — a tight, liquid market.',
+      ok: 'Typical time on market.',
+      watch: 'Slow market — long gaps mean carrying costs.',
+    }, Number.isFinite(days) ? bandScore(days,
+      [[20, 95], [30, 75], [60, 45], [90, 20], [150, 5]]) : null,
+    [chip('Median days on market', days, ' days', 0,
+          { note: 'From your suburb data' })]);
+
+    // 4. Suburb growth vs the ABS state series.
+    const subGrowth = suburb ? num(suburb.growth5yrPct, NaN) : NaN;
+    const stGrowth = Number.isFinite(ev.stateGrowth5yr) ? ev.stateGrowth5yr : null;
+    const delta = Number.isFinite(subGrowth) && stGrowth != null ? subGrowth - stGrowth : null;
+    push('growth_vs_state', 'Has the suburb outgrown the state?', {
+      nodata: 'Add suburb 5-yr growth to compare with the ABS state series.',
+      strong: 'Suburb growth has run ahead of the state benchmark.',
+      ok: 'Tracking the state market.',
+      watch: 'Lagging the state over the last five years.',
+    }, delta == null ? null : bandScore(delta,
+      [[-5, 15], [0, 50], [4, 70], [10, 90]]),
+    [chip('Suburb 5-yr growth', subGrowth, '%', 1),
+     chip(ev.stateGrowthLabel || 'State 5-yr median growth', stGrowth, '%', 1,
+          { note: 'ABS established-house medians, capital city series' })]);
+
+    const scored = out.filter((v) => v.score != null).map((v) => v.score);
+    return { verdicts: out,
+      avg: scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length) : null };
+  }
+
+  // Compose the full Deal Check bundle — one implementation shared by the
+  // app page, the client portal and the report-PDF payload. parts:
+  //   { census: server /census/point data | null, inputs, metrics,
+  //     suburb, evidence, idx? } — inputs are raw; they are normalized here.
+  // Census verdicts (server-scored, group 'area'), deal verdicts (group
+  // 'deal') and market verdicts (group 'market') blend equally into the
+  // overall; a missing lens drops out of the blend.
+  function dealCheckBundle(parts) {
+    const p = parts || {};
+    const inputs = singleView(normalizeInputs(p.inputs || {}));
+    const deal = dealVerdicts(inputs, p.metrics, p.suburb);
+    const market = marketVerdicts(inputs, p.evidence || {});
+    const censusVerdicts = (((p.census || {}).verdicts) || []).map((v) =>
+      Object.assign({}, v, { group: 'area' }));
+    const verdicts = censusVerdicts.concat(deal.verdicts, market.verdicts);
+    const cAvg = ((p.census || {}).overall || {}).score;
+    const lens = [cAvg, deal.avg, market.avg].filter((x) => x != null);
+    const score = lens.length
+      ? Math.round(lens.reduce((a, b) => a + b, 0) / lens.length) : null;
+    const status = score == null ? 'nodata'
+      : score >= 65 ? 'strong' : score >= 40 ? 'ok' : 'watch';
+    const word = { strong: 'PASS', ok: 'CONDITIONAL', watch: 'CAUTION' };
+    const onlyCensus = deal.avg == null && market.avg == null;
+    const onlyDeal = cAvg == null && market.avg == null;
+    const onlyMarket = cAvg == null && deal.avg == null;
+    const headline = status === 'nodata' ? 'Not enough data to score this deal.'
+      : onlyCensus ? ((p.census || {}).overall || {}).headline
+      : onlyDeal ? `Deal numbers look ${status === 'watch' ? 'weak' : 'sound'} — census and evidence unavailable.`
+      : onlyMarket ? `Local evidence looks ${status === 'watch' ? 'weak' : 'solid'} — census and deal scoring unavailable.`
+      : {
+          strong: 'Area, deal and market evidence line up behind this one.',
+          ok: 'Mixed signals — work the flags below.',
+          watch: 'Fundamentals are weak overall — proceed only with a clear thesis.',
+        }[status];
+    const ranked = verdicts.filter((v) => v.score != null)
+      .slice().sort((a, b) => b.score - a.score);
+    const overall = {
+      score, status, verdictWord: score == null ? '—' : word[status], headline,
+      drivers: { for: ranked.slice(0, 2).map((v) => v.question),
+                 against: ranked.slice(-2).reverse()
+                   .filter((v) => v.score < 50).map((v) => v.question) },
+    };
+    return { sa2: (p.census || {}).sa2 || null,
+             verdicts, overall, source: (p.census || {}).source || null,
+             fetchedAt: (p.census || {}).fetchedAt || null };
+  }
+
+  // Five-year capital-city median house growth from /api/markets/prices
+  // data — the ABS benchmark for growth_vs_state. Returns {pct, label}|null.
+  function stateGrowth5yr(prices, stateCode) {
+    const houses = ((((prices || {}).states || {})[stateCode]) || {}).capital || {};
+    const arr = houses.houses || [];
+    const n = arr.length;
+    if (n < 21 || arr[n - 1] == null || arr[n - 21] == null) return null;
+    const pct = Math.round((arr[n - 1] / arr[n - 21] - 1) * 1000) / 10;
+    const city = ((prices || {}).capitals || {})[stateCode] || (stateCode + ' capital');
+    return { pct, label: `${city} 5-yr median growth (ABS)` };
+  }
+
+  function riskChecklist(rawInputs, suburb) {    const inputs = singleView(normalizeInputs(rawInputs));
     const checks = [];
     const add = (key, label, status, detail) => checks.push({ key, label, status, detail });
 
@@ -2366,6 +2736,7 @@
     landTaxQLD,
     marginalRate,
     incomeTaxEstimate,
+    ownerTaxSplit,
     lmiEstimate,
     loanPayment,
     advanceLoan,
@@ -2383,7 +2754,12 @@
     scoreBand,
     compDerivations,
     growthScenarios,
+    ownedInputs,
     riskChecklist,
+    dealVerdicts,
+    marketVerdicts,
+    dealCheckBundle,
+    stateGrowth5yr,
     calculateAll,
   };
 

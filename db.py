@@ -40,6 +40,16 @@ _SCHEMA = [
         created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """,
+    # Onboarding answers (goal, properties owned) — generic key/value so
+    # new wizard questions need no migration.
+    """
+    CREATE TABLE IF NOT EXISTS user_prefs (
+        user_id   INTEGER NOT NULL,
+        key       TEXT NOT NULL,
+        value     TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (user_id, key)
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS client_profiles (
         user_id     INTEGER PRIMARY KEY,
@@ -202,12 +212,16 @@ _SCHEMA = [
     """,
     """
     CREATE TABLE IF NOT EXISTS ba_profiles (
-        user_id       INTEGER PRIMARY KEY,
-        business_name TEXT NOT NULL DEFAULT '',
-        accent_color  TEXT NOT NULL DEFAULT '',
-        logo_url      TEXT NOT NULL DEFAULT '',
-        tagline       TEXT NOT NULL DEFAULT '',
-        created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+        user_id        INTEGER PRIMARY KEY,
+        business_name  TEXT NOT NULL DEFAULT '',
+        accent_color   TEXT NOT NULL DEFAULT '',
+        logo_url       TEXT NOT NULL DEFAULT '',
+        tagline        TEXT NOT NULL DEFAULT '',
+        phone          TEXT NOT NULL DEFAULT '',
+        email          TEXT NOT NULL DEFAULT '',
+        website        TEXT NOT NULL DEFAULT '',
+        office_address TEXT NOT NULL DEFAULT '',
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """,
     """
@@ -226,6 +240,84 @@ _SCHEMA = [
     """
     CREATE INDEX IF NOT EXISTS idx_rental_comps_scenario
         ON rental_comps(scenario_id)
+    """,
+    # Client portfolios: one share link covering N property presentations.
+    # Access flows through the PORTFOLIO token; the per-item presentations
+    # keep their internal tokens (satisfying the UNIQUE constraint) but are
+    # never published.
+    """
+    CREATE TABLE IF NOT EXISTS portfolios (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        ba_user_id       INTEGER NOT NULL,
+        client_user_id   INTEGER NOT NULL,
+        title            TEXT NOT NULL DEFAULT '',
+        share_token_hash TEXT NOT NULL UNIQUE,
+        status           TEXT NOT NULL DEFAULT 'active',
+        expires_at       TEXT,
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_portfolios_ba ON portfolios(ba_user_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_portfolios_client ON portfolios(client_user_id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS portfolio_items (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        portfolio_id    INTEGER NOT NULL,
+        presentation_id INTEGER NOT NULL UNIQUE,
+        label           TEXT NOT NULL DEFAULT '',
+        summary_json    TEXT NOT NULL DEFAULT '{}',
+        position        INTEGER NOT NULL DEFAULT 0,
+        created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_portfolio_items ON portfolio_items(portfolio_id)
+    """,
+    # Due-diligence documents per scenario (BA uploads, clients read via
+    # an active presentation). Bytes live on disk; this row is metadata.
+    """
+    CREATE TABLE IF NOT EXISTS attachments (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        scenario_id  INTEGER NOT NULL,
+        user_id      INTEGER NOT NULL,
+        display_name TEXT NOT NULL,
+        stored_name  TEXT NOT NULL,
+        mime         TEXT NOT NULL,
+        bytes        INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_attachments_scenario ON attachments(scenario_id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ba_alerts (
+        user_id  INTEGER PRIMARY KEY,
+        enabled  INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS suburb_sales (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        state         TEXT NOT NULL,
+        suburb        TEXT NOT NULL,
+        dwelling_type TEXT NOT NULL DEFAULT 'houses',
+        period        TEXT NOT NULL,
+        median        INTEGER,
+        sales_count   INTEGER,
+        source        TEXT NOT NULL DEFAULT '',
+        created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(state, suburb, dwelling_type, period)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_suburb_sales_lookup
+        ON suburb_sales(state, suburb, dwelling_type, period)
     """,
 ]
 
@@ -328,6 +420,10 @@ class Database:
                     cur = self._run(sql, args, returning=False)
                 else:
                     raise
+            if not self.dsn:
+                # Postgres autocommits; sqlite3 sits in an implicit
+                # transaction — without this every write is lost at shutdown
+                self._conn.commit()
             if self.dsn and getattr(cur, "description", None):
                 row = cur.fetchone()
                 return row["id"] if row else 0
@@ -381,6 +477,33 @@ class Database:
             if "suburb_id" not in cols:
                 self._exec_raw(
                     "ALTER TABLE scenarios ADD COLUMN suburb_id INTEGER")
+            # Migration: ba_profiles created before BA contact fields existed.
+            bp_cols = self._table_cols("ba_profiles")
+            for col in ("phone", "email", "website", "office_address"):
+                if col not in bp_cols:
+                    self._exec_raw(
+                        f"ALTER TABLE ba_profiles ADD COLUMN {col} "
+                        "TEXT NOT NULL DEFAULT ''")
+            # Migration: suburb rows link to their ABS SA2 (census crosswalk).
+            sub_cols = self._table_cols("suburbs")
+            if "sa2_code" not in sub_cols:
+                self._exec_raw("ALTER TABLE suburbs ADD COLUMN sa2_code TEXT")
+            self._exec_raw("""
+                CREATE TABLE IF NOT EXISTS metric_history (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    subject_type TEXT NOT NULL DEFAULT 'suburb',
+                    subject_id   INTEGER NOT NULL,
+                    metric       TEXT NOT NULL,
+                    period       TEXT NOT NULL,
+                    value        REAL,
+                    source       TEXT NOT NULL DEFAULT '',
+                    recorded_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(subject_type, subject_id, metric, period)
+                )
+            """)
+            self._exec_raw(
+                "CREATE INDEX IF NOT EXISTS idx_metric_history_lookup "
+                "ON metric_history (subject_type, subject_id, metric, period)")
             # Role column for pre-platform DBs.
             if "role" not in self._table_cols("users"):
                 self._exec_raw(
@@ -399,6 +522,11 @@ class Database:
             )
             self._exec_raw(
                 "CREATE INDEX IF NOT EXISTS idx_scenarios_user ON scenarios(user_id)")
+            self._conn.commit()
+
+    def commit(self):
+        """Flush pending writes (SQLite only — Postgres autocommits)."""
+        if not self.dsn and self._conn is not None:
             self._conn.commit()
 
     def _exec_raw(self, sql):

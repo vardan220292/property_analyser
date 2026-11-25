@@ -37,19 +37,32 @@ def branding_out(ba_user_id):
         "accentColor": (r and r["accent_color"]) or "",
         "logoUrl": (r and r["logo_url"]) or "",
         "tagline": (r and r["tagline"]) or "",
+        "phone": (r and r["phone"]) or "",
+        "email": (r and r["email"]) or "",
+        "website": (r and r["website"]) or "",
+        "officeAddress": (r and r["office_address"]) or "",
     }
 
 
 def check_presentation_limit(ba_user_id):
-    """Return an error string when the plan blocks another ACTIVE share."""
+    """Return an error string when the plan blocks another ACTIVE share.
+
+    One share unit = one active portfolio OR one active standalone
+    presentation. Presentations grouped inside a portfolio don't count
+    separately — the portfolio is the thing the client opens."""
     user = db.db().fetch_one("SELECT plan FROM users WHERE id = ?", (ba_user_id,))
     if user and user["plan"] == "pro":
         return None
     n = db.db().fetch_one(
-        "SELECT COUNT(*) AS n FROM presentations WHERE ba_user_id = ? AND status = 'active'",
-        (ba_user_id,))["n"]
+        "SELECT COUNT(*) AS n FROM portfolios "
+        "WHERE ba_user_id = ? AND status = 'active'", (ba_user_id,))["n"]
+    n += db.db().fetch_one(
+        "SELECT COUNT(*) AS n FROM presentations p "
+        "WHERE p.ba_user_id = ? AND p.status = 'active' "
+        "AND NOT EXISTS (SELECT 1 FROM portfolio_items pi "
+        "                WHERE pi.presentation_id = p.id)", (ba_user_id,))["n"]
     if n >= TRIAL_ACTIVE_LIMIT:
-        return (f"Trial plan holds up to {TRIAL_ACTIVE_LIMIT} active proposals at once — "
+        return (f"Trial plan holds up to {TRIAL_ACTIVE_LIMIT} active shares at once — "
                 "upgrade to Pro for unlimited, or revoke an existing link")
     return None
 
@@ -72,16 +85,22 @@ def put_branding():
     if color and not MAX_COLOR.match(color):
         return jsonify({"ok": False, "error": "accentColor must be a #rrggbb hex colour"}), 400
     db.db().execute(
-        "INSERT INTO ba_profiles (user_id, business_name, accent_color, logo_url, tagline) "
-        "VALUES (?, ?, ?, ?, ?) "
+        "INSERT INTO ba_profiles (user_id, business_name, accent_color, logo_url, "
+        "tagline, phone, email, website, office_address) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(user_id) DO UPDATE SET business_name = excluded.business_name, "
         "accent_color = excluded.accent_color, logo_url = excluded.logo_url, "
-        "tagline = excluded.tagline",
+        "tagline = excluded.tagline, phone = excluded.phone, email = excluded.email, "
+        "website = excluded.website, office_address = excluded.office_address",
         (user["id"],
          (body.get("businessName") or "").strip()[:80],
          color,
          (body.get("logoUrl") or "").strip()[:300],
-         (body.get("tagline") or "").strip()[:140]))
+         (body.get("tagline") or "").strip()[:140],
+         (body.get("phone") or "").strip()[:30],
+         (body.get("email") or "").strip()[:80],
+         (body.get("website") or "").strip()[:120],
+         (body.get("officeAddress") or "").strip()[:140]))
     return jsonify({"ok": True, "data": branding_out(user["id"])})
 
 
@@ -105,17 +124,30 @@ def _save_logo_url(user_id, url):
         (user_id, url))
 
 
+def local_logo_dir():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "branding")
+
+
+# Public URL of a locally stored logo (served by file_route below).
+LOGO_FILE_ROUTE = "/api/branding/file/"
+
+
+@bp.get("/branding/file/<name>")
+def file_route(name):
+    """Serve a locally stored BA logo. Public — same trust model as the
+    Supabase public bucket: names are <user_id>.<ext>, no listing."""
+    import re
+    from flask import send_from_directory
+    if not re.fullmatch(r"[0-9a-fA-F-]{8,64}\.(png|jpg)", name):
+        return jsonify({"ok": False, "error": "not found"}), 404
+    return send_from_directory(local_logo_dir(), name)
+
+
 @bp.post("/branding/logo")
 def upload_logo():
     user = auth_user()
     if not user or user["role"] != "ba":
         return jsonify({"ok": False, "error": "not allowed for this account"}), 403
-    sb_url = os.environ.get("PA_SUPABASE_URL")
-    sb_key = os.environ.get("PA_SUPABASE_SERVICE_ROLE_KEY")
-    bucket = os.environ.get("PA_SUPABASE_BUCKET", "pa-branding")
-    if not sb_url or not sb_key:
-        return jsonify({"ok": False,
-                        "error": "logo storage not configured (PA_SUPABASE_* env)"}), 400
     f = request.files.get("file")
     if not f:
         return jsonify({"ok": False, "error": "choose a PNG or JPG file"}), 400
@@ -126,20 +158,31 @@ def upload_logo():
     if len(data) > MAX_LOGO_BYTES:
         return jsonify({"ok": False, "error": "logo must be under 1 MB"}), 400
 
-    path = f"{user['id']}.{ext}"
-    r = requests.post(
-        f"{sb_url}/storage/v1/object/{bucket}/{path}",
-        headers={
-            "Authorization": f"Bearer {sb_key}",
-            "Content-Type": f.mimetype,
-            "x-upsert": "true",
-        },
-        data=data, timeout=20,
-    )
-    if r.status_code not in (200, 201):
-        return jsonify({"ok": False,
-                        "error": f"storage upload failed ({r.status_code})"}), 502
-    public = f"{sb_url}/storage/v1/object/public/{bucket}/{path}"
+    sb_url = os.environ.get("PA_SUPABASE_URL")
+    sb_key = os.environ.get("PA_SUPABASE_SERVICE_ROLE_KEY")
+    if sb_url and sb_key:
+        bucket = os.environ.get("PA_SUPABASE_BUCKET", "pa-branding")
+        path = f"{user['id']}.{ext}"
+        r = requests.post(
+            f"{sb_url}/storage/v1/object/{bucket}/{path}",
+            headers={
+                "Authorization": f"Bearer {sb_key}",
+                "Content-Type": f.mimetype,
+                "x-upsert": "true",
+            },
+            data=data, timeout=20,
+        )
+        if r.status_code not in (200, 201):
+            return jsonify({"ok": False,
+                            "error": f"storage upload failed ({r.status_code})"}), 502
+        public = f"{sb_url}/storage/v1/object/public/{bucket}/{path}"
+    else:
+        # No cloud storage configured — keep the logo on this machine.
+        os.makedirs(local_logo_dir(), exist_ok=True)
+        path = f"{user['id']}.{ext}"
+        with open(os.path.join(local_logo_dir(), path), "wb") as fh:
+            fh.write(data)
+        public = LOGO_FILE_ROUTE + path
     _save_logo_url(user["id"], public)
     return jsonify({"ok": True, "data": branding_out(user["id"])})
 
